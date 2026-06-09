@@ -1,0 +1,625 @@
+{
+  "name": "Sistem SPP Sekolah - AI Agent Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "spp-sekolah",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "spp-sekolah-main"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// KONFIGURASI UTAMA — UBAH DI SINI\n// ============================================================\n// Untuk mengganti provider LLM, ubah nilai di bawah:\n//\n// PROVIDER OPTIONS:\n//   'googleGemini'   → Google Gemini (default)\n//   'openAi'         → OpenAI GPT\n//   'anthropic'      → Anthropic Claude\n//   'ollama'         → Ollama (local)\n//\n// Credential name harus sesuai dengan nama credential\n// yang sudah kamu buat di n8n Settings > Credentials.\n// ============================================================\n\nconst CONFIG = {\n  // --- PROVIDER AKTIF ---\n  // Ganti nilai ini untuk switch provider semua agent sekaligus\n  activeProvider: 'googleGemini',\n\n  // --- MODEL PER PROVIDER ---\n  models: {\n    googleGemini: 'models/gemini-2.0-flash',\n    openAi: 'gpt-4o',\n    anthropic: 'claude-sonnet-4-5',\n    ollama: 'llama3.1'\n  },\n\n  // --- NAMA CREDENTIAL DI N8N ---\n  // Pastikan nama ini sama persis dengan credential di n8n\n  credentials: {\n    googleGemini: 'Google Gemini API',\n    openAi: 'OpenAI API',\n    anthropic: 'Anthropic API',\n    ollama: 'Ollama API'\n  },\n\n  // --- GITHUB (aktifkan jika perlu commit otomatis) ---\n  github: {\n    enabled: false,           // Ubah ke true untuk aktifkan GitHub commit\n    credentialName: 'GitHub API',\n    owner: 'dikkycenter',\n    repo: 'spp-sekolah',\n    branch: 'main'\n  }\n};\n\n// Ambil input dari webhook\nconst body = $input.first().json.body || $input.first().json;\nconst userRequest = body.request || body.message || body.task || '';\nconst targetAgent = body.agent || 'project_manager'; // bisa override agent tertentu\n\nif (!userRequest) {\n  throw new Error('Request kosong. Kirim JSON dengan field \"request\" berisi deskripsi tugas.');\n}\n\nreturn [{\n  json: {\n    config: CONFIG,\n    userRequest: userRequest,\n    targetAgent: targetAgent,\n    timestamp: new Date().toISOString(),\n    activeModel: CONFIG.models[CONFIG.activeProvider],\n    activeProvider: CONFIG.activeProvider\n  }\n}];"
+      },
+      "id": "config-init",
+      "name": "Config & Init",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/{{ $json.config.models[$json.config.activeProvider] }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_instruction\": {\n    \"parts\": [{\n      \"text\": \"Kamu adalah PROJECT MANAGER untuk sistem SPP Sekolah berbasis Laravel 13, Filament v5, Livewire 4, Alpine.js, Tailwind CSS, PostgreSQL 16.\\n\\nTUGAS UTAMA:\\n1. Analisis request user dan breakdown menjadi task teknis\\n2. Tentukan urutan pengerjaan (Database → Backend → Frontend → QA → Docs)\\n3. Identifikasi dependencies antar task\\n4. Pastikan task sesuai dengan PRD dan tidak keluar dari scope\\n\\nSCOPE YANG DIIZINKAN:\\n- Master Data: Murid, Paket SPP, Diskon SPP, Tahun Ajaran\\n- Operasional: Tagihan otomatis, Pembayaran, FIFO, Parsial\\n- Monitoring: Dashboard tunggakan, Statistik\\n- Utilitas: WhatsApp reminder, Export PDF\\n\\nSCOPE YANG DILARANG (jangan pernah masukkan ke task):\\n- Payment Gateway, Virtual Account, QRIS payment, Integrasi Bank\\n- Multi Sekolah, Multi Cabang, Multi Mata Uang\\n- Akuntansi Jurnal, Approval Workflow Berjenjang\\n\\nARSITEKTUR WAJIB:\\n- Seluruh logika bisnis di Service Class (PaymentService, BillingService, DiscountService)\\n- Filament Resource hanya display + call Service\\n- Tidak boleh ada logika bisnis di Resource atau Blade\\n\\nFORMAT OUTPUT — harus JSON valid:\\n{\\n  \\\"task_id\\\": \\\"PM-001\\\",\\n  \\\"summary\\\": \\\"deskripsi singkat\\\",\\n  \\\"tasks\\\": [\\n    {\\n      \\\"agent\\\": \\\"database_designer | backend_developer | frontend_developer | qa_reviewer | technical_writer\\\",\\n      \\\"task\\\": \\\"deskripsi task spesifik\\\",\\n      \\\"priority\\\": 1,\\n      \\\"dependencies\\\": [],\\n      \\\"files_to_create\\\": []\\n    }\\n  ],\\n  \\\"notes\\\": \\\"catatan tambahan\\\"\\n}\\n\\nJANGAN tambahkan fitur di luar scope. Output harus JSON murni tanpa markdown.\"\n    }]\n  },\n  \"contents\": [{\n    \"role\": \"user\",\n    \"parts\": [{\n      \"text\": {{ JSON.stringify($json.userRequest) }}\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"maxOutputTokens\": 4096\n  }\n}",
+        "options": {}
+      },
+      "id": "agent-project-manager",
+      "name": "Agent: Project Manager",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 400],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "gemini-api-key",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse response dari Project Manager\nconst response = $input.first().json;\nconst prevData = $('Config & Init').first().json;\n\nlet pmOutput;\ntry {\n  const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';\n  // Bersihkan markdown code block jika ada\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  pmOutput = JSON.parse(cleaned);\n} catch(e) {\n  pmOutput = {\n    task_id: 'PM-ERR-001',\n    summary: 'Gagal parse output PM',\n    tasks: [],\n    raw: response.candidates?.[0]?.content?.parts?.[0]?.text || 'No response',\n    error: e.message\n  };\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    pm_output: pmOutput,\n    current_step: 'project_manager_done'\n  }\n}];"
+      },
+      "id": "parse-pm-output",
+      "name": "Parse PM Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 400]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/{{ $json.config.models[$json.config.activeProvider] }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_instruction\": {\n    \"parts\": [{\n      \"text\": \"Kamu adalah DATABASE DESIGNER untuk sistem SPP Sekolah berbasis Laravel 13 dan PostgreSQL 16.\\n\\nTUGAS: Buat migration Laravel yang lengkap dan benar.\\n\\nSPESIFIKASI DATABASE WAJIB:\\n\\n1. TABEL murids:\\n   - id bigint PK\\n   - nisn string unique\\n   - nama string\\n   - status string (aktif/non-aktif) index\\n   - paket_spp_id foreignId index\\n   - tahun_ajaran_id foreignId index\\n   - timestamps\\n\\n2. TABEL paket_spp:\\n   - id bigint PK\\n   - nama_paket string\\n   - nominal_dasar decimal(10,2)\\n   - timestamps\\n\\n3. TABEL tahun_ajaran:\\n   - id bigint PK\\n   - nama string\\n   - aktif boolean (hanya satu boleh aktif)\\n   - timestamps\\n\\n4. TABEL diskon_spp:\\n   - id bigint PK\\n   - murid_id foreignId\\n   - jenis_diskon string (Beasiswa/Anak Guru/Prestasi)\\n   - nilai decimal(10,2)\\n   - tanggal_mulai date\\n   - tanggal_selesai date\\n   - aktif boolean\\n   - timestamps\\n\\n5. TABEL tagihan_spp:\\n   - id bigint PK\\n   - murid_id foreignId index\\n   - bulan_tagihan string(7) index (format: YYYY-MM)\\n   - nominal_tagihan decimal(10,2)\\n   - nominal_terbayar decimal(10,2) default 0\\n   - sisa_tagihan decimal(10,2)\\n   - status_bayar string index (belum_bayar/sebagian/lunas)\\n   - timestamps\\n   - unique(murid_id, bulan_tagihan)\\n\\n6. TABEL pembayaran:\\n   - id bigint PK\\n   - murid_id foreignId\\n   - nominal decimal(10,2)\\n   - metode_bayar string (Tunai/Transfer/QRIS)\\n   - tgl_bayar timestamp\\n   - catatan text nullable\\n   - created_by foreignId (users)\\n   - timestamps\\n\\nATPAN WAJIB:\\n- Gunakan $table->foreignId()->constrained()->cascadeOnDelete() untuk FK\\n- Semua index eksplisit didefinisikan\\n- PostgreSQL compatible (gunakan decimal, bukan float)\\n- Urutan migration harus benar (referenced table dulu)\\n- Setiap migration satu file terpisah\\n\\nFORMAT OUTPUT:\\n{\\n  \\\"files\\\": [\\n    {\\n      \\\"filename\\\": \\\"2025_01_01_000001_create_tahun_ajaran_table.php\\\",\\n      \\\"path\\\": \\\"database/migrations/\\\",\\n      \\\"content\\\": \\\"<?php ...kode lengkap...\\\"\\n    }\\n  ],\\n  \\\"notes\\\": \\\"penjelasan singkat\\\"\\n}\\n\\nOutput harus JSON murni tanpa markdown.\"\n    }]\n  },\n  \"contents\": [{\n    \"role\": \"user\",\n    \"parts\": [{\n      \"text\": {{ JSON.stringify(\"Buat semua migration untuk sistem SPP Sekolah sesuai spesifikasi. Task dari PM: \" + JSON.stringify($json.pm_output)) }}\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.1,\n    \"maxOutputTokens\": 8192\n  }\n}",
+        "options": {}
+      },
+      "id": "agent-database-designer",
+      "name": "Agent: Database Designer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1180, 400],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "gemini-api-key",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst prevData = $('Parse PM Output').first().json;\n\nlet dbOutput;\ntry {\n  const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  dbOutput = JSON.parse(cleaned);\n} catch(e) {\n  dbOutput = {\n    files: [],\n    raw: response.candidates?.[0]?.content?.parts?.[0]?.text || 'No response',\n    error: e.message\n  };\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    db_output: dbOutput,\n    current_step: 'database_designer_done'\n  }\n}];"
+      },
+      "id": "parse-db-output",
+      "name": "Parse DB Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1420, 400]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/{{ $json.config.models[$json.config.activeProvider] }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_instruction\": {\n    \"parts\": [{\n      \"text\": \"Kamu adalah BACKEND DEVELOPER untuk sistem SPP Sekolah berbasis Laravel 13.\\n\\nTUGAS: Buat Service Classes, Models, dan logika bisnis backend.\\n\\nATURAN WAJIB:\\n1. Seluruh logika bisnis di Service Class — TIDAK di Resource, TIDAK di Controller, TIDAK di Blade\\n2. Wajib gunakan type hinting di semua method\\n3. Wajib gunakan database transaction untuk operasi pembayaran\\n4. Wajib gunakan lockForUpdate() pada query tagihan dalam transaksi\\n\\nSERVICE CLASSES YANG HARUS DIBUAT:\\n\\n### BillingService\\nMethod: generateMonthlyBilling(string $yearMonth): void\\n- Ambil murid aktif\\n- Cek tagihan sudah ada (hindari duplikat)\\n- Hitung diskon aktif\\n- Formula: nominal_tagihan = nominal_dasar - diskon\\n- Buat record tagihan_spp\\n- Validasi: tidak boleh buat tagihan duplikat (unique murid_id + bulan_tagihan)\\n\\n### PaymentService\\nMethod: processPayment(int $muridId, float $nominal, string $metodeBayar, ?string $catatan): array\\n- Validasi nominal > 0\\n- Ambil tagihan belum lunas urut bulan_tagihan ASC (FIFO)\\n- Gunakan lockForUpdate() dalam DB::transaction\\n- Alokasikan pembayaran ke tagihan tertua dulu\\n- Update nominal_terbayar, sisa_tagihan, status_bayar\\n- Simpan record pembayaran\\n- Return summary pembayaran\\n\\nStatus tagihan:\\n- nominal_terbayar = 0 → belum_bayar\\n- 0 < nominal_terbayar < nominal_tagihan → sebagian\\n- nominal_terbayar = nominal_tagihan → lunas\\n\\n### DiscountService\\nMethod: getActiveDiscount(int $muridId, string $date): float\\n- Ambil diskon aktif untuk murid pada tanggal tertentu\\n- Cek: aktif = true AND tanggal_mulai <= date AND tanggal_selesai >= date\\n- Return total nilai diskon\\n\\n### MODELS yang dibutuhkan:\\nMurid, PaketSpp, TahunAjaran, DiskonSpp, TagihanSpp, Pembayaran\\n\\nKODING STANDARDS:\\n- Gunakan PHP 8.2+ syntax\\n- Strict types di setiap file\\n- Semua exception harus di-catch dan throw ulang dengan pesan yang jelas\\n- Gunakan Eloquent ORM, hindari raw SQL\\n\\nFORMAT OUTPUT:\\n{\\n  \\\"files\\\": [\\n    {\\n      \\\"filename\\\": \\\"PaymentService.php\\\",\\n      \\\"path\\\": \\\"app/Services/\\\",\\n      \\\"content\\\": \\\"<?php ...kode lengkap...\\\"\\n    }\\n  ],\\n  \\\"notes\\\": \\\"penjelasan\\\"\\n}\\n\\nOutput harus JSON murni tanpa markdown.\"\n    }]\n  },\n  \"contents\": [{\n    \"role\": \"user\",\n    \"parts\": [{\n      \"text\": {{ JSON.stringify(\"Buat semua Service Classes dan Models untuk sistem SPP Sekolah. Task PM: \" + JSON.stringify($json.pm_output) + \" | DB Schema: \" + JSON.stringify($json.db_output?.files?.map(f => f.filename))) }}\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.1,\n    \"maxOutputTokens\": 8192\n  }\n}",
+        "options": {}
+      },
+      "id": "agent-backend-developer",
+      "name": "Agent: Backend Developer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1660, 400],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "gemini-api-key",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst prevData = $('Parse DB Output').first().json;\n\nlet beOutput;\ntry {\n  const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  beOutput = JSON.parse(cleaned);\n} catch(e) {\n  beOutput = {\n    files: [],\n    raw: response.candidates?.[0]?.content?.parts?.[0]?.text || 'No response',\n    error: e.message\n  };\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    backend_output: beOutput,\n    current_step: 'backend_developer_done'\n  }\n}];"
+      },
+      "id": "parse-backend-output",
+      "name": "Parse Backend Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 400]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/{{ $json.config.models[$json.config.activeProvider] }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_instruction\": {\n    \"parts\": [{\n      \"text\": \"Kamu adalah FRONTEND DEVELOPER untuk sistem SPP Sekolah berbasis Filament v5, Livewire 4, Alpine.js, Tailwind CSS.\\n\\nTUGAS: Buat Filament Resources, Forms, Tables, Widgets, dan Actions.\\n\\nARAN WAJIB:\\n1. Resource TIDAK BOLEH mengandung logika bisnis\\n2. Resource HANYA boleh: tampilkan data, terima input, panggil Service\\n3. Gunakan Filament v5 syntax (bukan v2 atau v3)\\n\\nRESOURCES YANG HARUS DIBUAT:\\n\\n### MuridResource\\n- CRUD lengkap\\n- Form: nisn, nama, status (select: aktif/non-aktif), paket_spp_id (select), tahun_ajaran_id (select)\\n- Table: nisn, nama, status (badge), paket_spp.nama_paket, tahun_ajaran.nama\\n- Filter: status, tahun_ajaran_id\\n- Action: Kirim WhatsApp Reminder (generate wa.me URL dengan template pesan)\\n\\n### PaketSPPResource\\n- CRUD lengkap\\n- Form: nama_paket, nominal_dasar (money input)\\n- Table: nama_paket, nominal_dasar (formatted rupiah)\\n\\n### DiskonSPPResource\\n- CRUD lengkap\\n- Form: murid_id (select+search), jenis_diskon (select: Beasiswa/Anak Guru/Prestasi), nilai, tanggal_mulai, tanggal_selesai, aktif\\n- Table: murid.nama, jenis_diskon, nilai, periode, aktif (badge)\\n\\n### TahunAjaranResource\\n- CRUD lengkap\\n- Form: nama, aktif (toggle — hanya satu boleh aktif, validasi di Service)\\n- Table: nama, aktif (badge)\\n\\n### TagihanResource (READ ONLY — tidak ada edit manual)\\n- Table: murid.nama, bulan_tagihan, nominal_tagihan, nominal_terbayar, sisa_tagihan, status_bayar (badge warna)\\n- Filter: status_bayar, bulan_tagihan, murid\\n- TIDAK ADA edit form untuk status tagihan\\n\\n### PembayaranResource\\n- Create form: murid_id (select+search), nominal, metode_bayar (select: Tunai/Transfer/QRIS), tgl_bayar, catatan\\n- Pada create → panggil PaymentService::processPayment()\\n- Table riwayat: murid.nama, nominal, metode_bayar, tgl_bayar, catatan, created_by\\n\\n### Dashboard Widgets:\\n1. StatsOverviewWidget:\\n   - Total Tunggakan (sum sisa_tagihan where status != lunas)\\n   - Murid Menunggak (count distinct murid_id with tagihan belum lunas)\\n   - Pembayaran Bulan Ini (sum nominal where tgl_bayar bulan ini)\\n2. TunggakanTableWidget:\\n   - Daftar murid dengan total tunggakan\\n   - Kolom: nama, total_tunggak, tagihan_tertua\\n\\n### WhatsApp Action Template:\\n```\\nHalo Bapak/Ibu {nama_wali}\\nKami menginformasikan tagihan SPP atas nama:\\n{nama_murid}\\nTotal tunggakan: Rp {total_tunggakan}\\nMohon dapat dilakukan pembayaran sesuai ketentuan sekolah.\\nTerima kasih.\\n```\\nGenerate URL: https://wa.me/{no_hp}?text={encoded_message}\\n\\nFORMAT OUTPUT:\\n{\\n  \\\"files\\\": [\\n    {\\n      \\\"filename\\\": \\\"MuridResource.php\\\",\\n      \\\"path\\\": \\\"app/Filament/Resources/\\\",\\n      \\\"content\\\": \\\"<?php ...kode lengkap...\\\"\\n    }\\n  ],\\n  \\\"notes\\\": \\\"penjelasan\\\"\\n}\\n\\nOutput harus JSON murni tanpa markdown.\"\n    }]\n  },\n  \"contents\": [{\n    \"role\": \"user\",\n    \"parts\": [{\n      \"text\": {{ JSON.stringify(\"Buat semua Filament Resources dan Widgets untuk sistem SPP Sekolah. Task PM: \" + JSON.stringify($json.pm_output) + \" | Backend Services: \" + JSON.stringify($json.backend_output?.files?.map(f => f.filename))) }}\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"maxOutputTokens\": 8192\n  }\n}",
+        "options": {}
+      },
+      "id": "agent-frontend-developer",
+      "name": "Agent: Frontend Developer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2140, 400],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "gemini-api-key",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst prevData = $('Parse Backend Output').first().json;\n\nlet feOutput;\ntry {\n  const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  feOutput = JSON.parse(cleaned);\n} catch(e) {\n  feOutput = {\n    files: [],\n    raw: response.candidates?.[0]?.content?.parts?.[0]?.text || 'No response',\n    error: e.message\n  };\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    frontend_output: feOutput,\n    current_step: 'frontend_developer_done'\n  }\n}];"
+      },
+      "id": "parse-frontend-output",
+      "name": "Parse Frontend Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2380, 400]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/{{ $json.config.models[$json.config.activeProvider] }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_instruction\": {\n    \"parts\": [{\n      \"text\": \"Kamu adalah QA REVIEWER untuk sistem SPP Sekolah.\\n\\nTUGAS: Review semua output dari Database Designer, Backend Developer, dan Frontend Developer.\\n\\nCHECKLIST REVIEW:\\n\\n### Security Audit\\n- [ ] Tidak ada SQL injection vulnerability\\n- [ ] Input validation ada di semua form\\n- [ ] Authorization check di semua Resource\\n- [ ] Tidak ada hardcode credential\\n\\n### Syntax Audit\\n- [ ] PHP syntax valid (Laravel 13 compatible)\\n- [ ] Type hints lengkap di semua method\\n- [ ] Namespace benar\\n- [ ] Use statements lengkap\\n- [ ] Tidak ada syntax error obvious\\n\\n### Logic Audit\\n- [ ] FIFO payment logic benar (tagihan tertua duluan)\\n- [ ] Tagihan tidak duplikat (unique murid_id + bulan_tagihan)\\n- [ ] Status tagihan konsisten (sisa=0 → lunas)\\n- [ ] Logika bisnis di Service, BUKAN di Resource\\n- [ ] Tagihan lunas tidak bisa diedit\\n- [ ] Nominal pembayaran > 0\\n- [ ] DB Transaction + lockForUpdate() ada di PaymentService\\n- [ ] Diskon hanya berlaku saat aktif dan dalam periode\\n- [ ] Hanya satu TahunAjaran yang aktif\\n- [ ] Dashboard KPI sudah benar:\\n  * Total tunggakan = sum(sisa_tagihan) where status != lunas\\n  * Murid menunggak = count distinct murid_id with tagihan belum lunas\\n  * Pembayaran bulan ini = sum nominal bulan berjalan\\n\\n### Scope Audit\\n- [ ] Tidak ada fitur di luar scope (payment gateway, QRIS, multi sekolah, dll)\\n- [ ] WhatsApp hanya generate URL, bukan integrasi API WA\\n\\nFORMAT OUTPUT:\\n{\\n  \\\"verdict\\\": \\\"APPROVED\\\" atau \\\"REVISION_NEEDED\\\",\\n  \\\"summary\\\": \\\"ringkasan review\\\",\\n  \\\"issues\\\": [\\n    {\\n      \\\"severity\\\": \\\"critical | warning | suggestion\\\",\\n      \\\"file\\\": \\\"nama file\\\",\\n      \\\"issue\\\": \\\"deskripsi masalah\\\",\\n      \\\"fix\\\": \\\"saran perbaikan\\\"\\n    }\\n  ],\\n  \\\"approved_files\\\": [\\\"list file yang sudah OK\\\"],\\n  \\\"checklist\\\": {\\n    \\\"security\\\": true/false,\\n    \\\"syntax\\\": true/false,\\n    \\\"logic_fifo\\\": true/false,\\n    \\\"logic_no_duplicate\\\": true/false,\\n    \\\"logic_in_service\\\": true/false,\\n    \\\"scope_compliance\\\": true/false\\n  }\\n}\\n\\nOutput harus JSON murni tanpa markdown.\"\n    }]\n  },\n  \"contents\": [{\n    \"role\": \"user\",\n    \"parts\": [{\n      \"text\": {{ JSON.stringify(\"Review semua output berikut:\\n\\nDB FILES: \" + JSON.stringify($json.db_output) + \"\\n\\nBACKEND FILES: \" + JSON.stringify($json.backend_output) + \"\\n\\nFRONTEND FILES: \" + JSON.stringify($json.frontend_output)) }}\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.1,\n    \"maxOutputTokens\": 4096\n  }\n}",
+        "options": {}
+      },
+      "id": "agent-qa-reviewer",
+      "name": "Agent: QA Reviewer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2620, 400],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "gemini-api-key",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst prevData = $('Parse Frontend Output').first().json;\n\nlet qaOutput;\ntry {\n  const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  qaOutput = JSON.parse(cleaned);\n} catch(e) {\n  qaOutput = {\n    verdict: 'PARSE_ERROR',\n    summary: 'Gagal parse output QA',\n    issues: [],\n    raw: response.candidates?.[0]?.content?.parts?.[0]?.text || 'No response',\n    error: e.message\n  };\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    qa_output: qaOutput,\n    current_step: 'qa_reviewer_done',\n    qa_approved: qaOutput.verdict === 'APPROVED'\n  }\n}];"
+      },
+      "id": "parse-qa-output",
+      "name": "Parse QA Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "qa-check",
+              "leftValue": "={{ $json.qa_approved }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "qa-gate",
+      "name": "QA Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3100, 400]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/{{ $json.config.models[$json.config.activeProvider] }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_instruction\": {\n    \"parts\": [{\n      \"text\": \"Kamu adalah TECHNICAL WRITER untuk sistem SPP Sekolah.\\n\\nTUGAS: Buat Conventional Commit message berdasarkan semua perubahan yang telah dibuat.\\n\\nCONVENTIONAL COMMIT FORMAT:\\n<type>(<scope>): <subject>\\n\\n<body>\\n\\n<footer>\\n\\nTYPES:\\n- feat: fitur baru\\n- fix: bug fix\\n- refactor: refactoring tanpa perubahan fitur\\n- docs: dokumentasi\\n- test: penambahan test\\n- chore: maintenance\\n- perf: performance improvement\\n\\nSCOPES (gunakan sesuai area perubahan):\\n- database, migration\\n- service, payment, billing, discount\\n- resource, filament, ui\\n- scheduler, queue\\n- dashboard, widget\\n\\nATURAN:\\n- Subject max 72 karakter\\n- Body jelaskan WHAT dan WHY, bukan HOW\\n- Footer berisi: Implements #<issue>, Closes #<issue>, atau Co-authored-by jika relevan\\n- Gunakan bahasa Inggris untuk commit message\\n\\nCONTOH OUTPUT:\\n{\\n  \\\"commit_message\\\": \\\"feat(database): add migrations for SPP school management system\\\\n\\\\nCreate all required database tables: murids, paket_spp, tahun_ajaran,\\\\ndiskon_spp, tagihan_spp, and pembayaran with proper indexes,\\\\nforeign keys, and constraints as per PRD specification.\\\\n\\\\nImplements: SPP-001\\\",\\n  \\\"files_changed\\\": [\\\"list file yang berubah\\\"],\\n  \\\"summary\\\": \\\"penjelasan singkat dalam Bahasa Indonesia\\\"\\n}\\n\\nOutput harus JSON murni tanpa markdown.\"\n    }]\n  },\n  \"contents\": [{\n    \"role\": \"user\",\n    \"parts\": [{\n      \"text\": {{ JSON.stringify(\"Buat conventional commit message untuk perubahan berikut:\\nRequest: \" + $json.userRequest + \"\\nDB files: \" + JSON.stringify($json.db_output?.files?.map(f => f.filename)) + \"\\nBackend files: \" + JSON.stringify($json.backend_output?.files?.map(f => f.filename)) + \"\\nFrontend files: \" + JSON.stringify($json.frontend_output?.files?.map(f => f.filename)) + \"\\nQA verdict: \" + $json.qa_output?.verdict) }}\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.2,\n    \"maxOutputTokens\": 2048\n  }\n}",
+        "options": {}
+      },
+      "id": "agent-technical-writer",
+      "name": "Agent: Technical Writer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3340, 260],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "gemini-api-key",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst prevData = $('QA Gate').first().json;\n\nlet twOutput;\ntry {\n  const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';\n  const cleaned = rawText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  twOutput = JSON.parse(cleaned);\n} catch(e) {\n  twOutput = {\n    commit_message: 'chore: update spp sekolah system',\n    files_changed: [],\n    raw: response.candidates?.[0]?.content?.parts?.[0]?.text || 'No response',\n    error: e.message\n  };\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    tw_output: twOutput,\n    current_step: 'technical_writer_done'\n  }\n}];"
+      },
+      "id": "parse-tw-output",
+      "name": "Parse TW Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3580, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// GITHUB COMMIT NODE\n// Aktifkan dengan mengubah config.github.enabled = true\n// di node 'Config & Init'\n// ============================================================\n//\n// SETUP GITHUB:\n// 1. Buat Personal Access Token di GitHub:\n//    Settings → Developer Settings → Personal Access Tokens → Fine-grained tokens\n//    Permissions: Contents (read & write), Metadata (read)\n// 2. Di n8n: Settings → Credentials → Add Credential → GitHub API\n//    Masukkan token tersebut\n// 3. Ubah config.github.enabled = true di node 'Config & Init'\n// 4. Sesuaikan config.github.owner dan config.github.repo\n//\n// CATATAN: Node ini sudah siap pakai, tidak perlu modifikasi lain.\n// ============================================================\n\nconst data = $input.first().json;\nconst githubConfig = data.config.github;\n\nif (!githubConfig.enabled) {\n  return [{\n    json: {\n      ...data,\n      github_output: {\n        status: 'SKIPPED',\n        message: 'GitHub commit dinonaktifkan. Set config.github.enabled = true untuk mengaktifkan.',\n        commit_message: data.tw_output?.commit_message || ''\n      },\n      current_step: 'github_skipped'\n    }\n  }];\n}\n\n// Jika enabled, data akan diteruskan ke HTTP Request node GitHub\nreturn [{\n  json: {\n    ...data,\n    github_ready: true,\n    current_step: 'github_preparing'\n  }\n}];"
+      },
+      "id": "github-gate",
+      "name": "GitHub Gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3820, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// GITHUB COMMIT EXECUTOR\n// Node ini hanya berjalan jika github_ready = true\n// Untuk menggunakan, pastikan sudah setup credential GitHub di n8n\n// ============================================================\n\nconst data = $input.first().json;\n\nif (!data.github_ready) {\n  return [$input.first()];\n}\n\n// Kumpulkan semua file yang dihasilkan\nconst allFiles = [\n  ...(data.db_output?.files || []),\n  ...(data.backend_output?.files || []),\n  ...(data.frontend_output?.files || [])\n];\n\n// Persiapkan data untuk GitHub API\nconst githubPayload = {\n  owner: data.config.github.owner,\n  repo: data.config.github.repo,\n  branch: data.config.github.branch,\n  commit_message: data.tw_output?.commit_message || 'chore: update via n8n workflow',\n  files: allFiles.map(f => ({\n    path: (f.path + f.filename).replace(/\\/\\//g, '/'),\n    content: f.content\n  }))\n};\n\nreturn [{\n  json: {\n    ...data,\n    github_payload: githubPayload,\n    github_output: {\n      status: 'PENDING',\n      message: `Siap commit ${allFiles.length} file ke ${data.config.github.owner}/${data.config.github.repo}`,\n      files_count: allFiles.length\n    },\n    current_step: 'github_commit_prepared'\n  }\n}];\n\n// ============================================================\n// UNTUK IMPLEMENTASI PENUH GITHUB COMMIT:\n// Tambahkan HTTP Request node setelah ini dengan:\n// URL: https://api.github.com/repos/{{owner}}/{{repo}}/git/refs/heads/{{branch}}\n// Method: GET\n// Auth: GitHub credential\n// Kemudian gunakan SHA-nya untuk membuat tree dan commit\n// Referensi: https://docs.github.com/en/rest/git\n// ============================================================"
+      },
+      "id": "github-commit",
+      "name": "GitHub Commit (Setup Ready)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4060, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Kompilasi hasil final dari seluruh pipeline\nconst data = $input.first().json;\n\n// Kumpulkan semua file\nconst allFiles = [\n  ...(data.db_output?.files || []).map(f => ({...f, agent: 'Database Designer'})),\n  ...(data.backend_output?.files || []).map(f => ({...f, agent: 'Backend Developer'})),\n  ...(data.frontend_output?.files || []).map(f => ({...f, agent: 'Frontend Developer'}))\n];\n\nconst summary = {\n  status: 'SUCCESS',\n  workflow: 'Sistem SPP Sekolah - AI Agent Pipeline',\n  timestamp: new Date().toISOString(),\n  user_request: data.userRequest,\n  provider_used: data.activeProvider,\n  model_used: data.activeModel,\n\n  pipeline_summary: {\n    project_manager: {\n      task_id: data.pm_output?.task_id,\n      summary: data.pm_output?.summary,\n      total_tasks: data.pm_output?.tasks?.length || 0\n    },\n    database_designer: {\n      files_generated: data.db_output?.files?.length || 0,\n      filenames: data.db_output?.files?.map(f => f.filename) || []\n    },\n    backend_developer: {\n      files_generated: data.backend_output?.files?.length || 0,\n      filenames: data.backend_output?.files?.map(f => f.filename) || []\n    },\n    frontend_developer: {\n      files_generated: data.frontend_output?.files?.length || 0,\n      filenames: data.frontend_output?.files?.map(f => f.filename) || []\n    },\n    qa_reviewer: {\n      verdict: data.qa_output?.verdict,\n      issues_count: data.qa_output?.issues?.length || 0,\n      critical_issues: data.qa_output?.issues?.filter(i => i.severity === 'critical') || [],\n      checklist: data.qa_output?.checklist\n    },\n    technical_writer: {\n      commit_message: data.tw_output?.commit_message\n    },\n    github: {\n      status: data.github_output?.status,\n      message: data.github_output?.message\n    }\n  },\n\n  total_files_generated: allFiles.length,\n  files: allFiles,\n\n  definition_of_done: {\n    migrations_ready: (data.db_output?.files?.length || 0) > 0,\n    no_syntax_errors: data.qa_output?.checklist?.syntax || false,\n    qa_approved: data.qa_output?.verdict === 'APPROVED',\n    fifo_logic_verified: data.qa_output?.checklist?.logic_fifo || false,\n    no_duplicate_billing: data.qa_output?.checklist?.logic_no_duplicate || false,\n    scope_compliance: data.qa_output?.checklist?.scope_compliance || false\n  }\n};\n\nreturn [{ json: summary }];"
+      },
+      "id": "compile-final-output",
+      "name": "Compile Final Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4300, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Output ketika QA TIDAK APPROVED — kirim laporan revision\nconst data = $input.first().json;\n\nconst revisionReport = {\n  status: 'REVISION_NEEDED',\n  workflow: 'Sistem SPP Sekolah - AI Agent Pipeline',\n  timestamp: new Date().toISOString(),\n  user_request: data.userRequest,\n\n  qa_result: {\n    verdict: data.qa_output?.verdict,\n    summary: data.qa_output?.summary,\n    critical_issues: data.qa_output?.issues?.filter(i => i.severity === 'critical') || [],\n    warnings: data.qa_output?.issues?.filter(i => i.severity === 'warning') || [],\n    suggestions: data.qa_output?.issues?.filter(i => i.severity === 'suggestion') || [],\n    checklist: data.qa_output?.checklist\n  },\n\n  message: 'QA tidak memberikan APPROVED. Silakan review issues di atas dan jalankan ulang workflow setelah diperbaiki.',\n  next_steps: [\n    'Review critical issues terlebih dahulu',\n    'Perbaiki masalah yang ditemukan QA',\n    'Jalankan ulang workflow dengan request yang sama'\n  ]\n};\n\nreturn [{ json: revisionReport }];"
+      },
+      "id": "qa-revision-report",
+      "name": "QA Revision Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3340, 560]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "webhook-response-success",
+      "name": "Response: Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [4540, 260]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 422,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "webhook-response-revision",
+      "name": "Response: Revision Needed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3580, 560]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config & Init",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config & Init": {
+      "main": [
+        [
+          {
+            "node": "Agent: Project Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: Project Manager": {
+      "main": [
+        [
+          {
+            "node": "Parse PM Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse PM Output": {
+      "main": [
+        [
+          {
+            "node": "Agent: Database Designer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: Database Designer": {
+      "main": [
+        [
+          {
+            "node": "Parse DB Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse DB Output": {
+      "main": [
+        [
+          {
+            "node": "Agent: Backend Developer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: Backend Developer": {
+      "main": [
+        [
+          {
+            "node": "Parse Backend Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Backend Output": {
+      "main": [
+        [
+          {
+            "node": "Agent: Frontend Developer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: Frontend Developer": {
+      "main": [
+        [
+          {
+            "node": "Parse Frontend Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Frontend Output": {
+      "main": [
+        [
+          {
+            "node": "Agent: QA Reviewer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: QA Reviewer": {
+      "main": [
+        [
+          {
+            "node": "Parse QA Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse QA Output": {
+      "main": [
+        [
+          {
+            "node": "QA Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "QA Gate": {
+      "main": [
+        [
+          {
+            "node": "Agent: Technical Writer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "QA Revision Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: Technical Writer": {
+      "main": [
+        [
+          {
+            "node": "Parse TW Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse TW Output": {
+      "main": [
+        [
+          {
+            "node": "GitHub Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Gate": {
+      "main": [
+        [
+          {
+            "node": "GitHub Commit (Setup Ready)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub Commit (Setup Ready)": {
+      "main": [
+        [
+          {
+            "node": "Compile Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile Final Output": {
+      "main": [
+        [
+          {
+            "node": "Response: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "QA Revision Report": {
+      "main": [
+        [
+          {
+            "node": "Response: Revision Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "updatedAt": "2025-01-01T00:00:00.000Z",
+      "id": "spp-sekolah",
+      "name": "SPP Sekolah"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
