@@ -5,18 +5,6 @@ networks:
     driver: bridge
 
 services:
-  9router:
-    image: 9router/api:latest # Sesuaikan dengan image resmi/lokal 9Router yang kamu gunakan
-    container_name: 9router
-    environment:
-      - PORT=20128
-      # Masukkan env tambahan bawaan 9Router kamu di sini (misal: API_KEY, BASE_URL model, dll)
-    ports:
-      - "20128:20128"
-    networks:
-      - spp_network
-    restart: unless-stopped
-
   n8n:
     image: docker.n8n.io/n8nio/n8n:latest
     container_name: n8n_automation
@@ -35,3 +23,19 @@ services:
     depends_on:
       - 9router
     restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: spp_sekolah
+      POSTGRES_USER: spp_user
+      POSTGRES_PASSWORD: ganti_password_ini
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  n8n_data:
+  postgres_data:

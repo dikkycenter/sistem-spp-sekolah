@@ -1,0 +1,574 @@
+{
+  "name": "SPP Sekolah - AI Agent Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "spp-trigger",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "🚀 Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 400],
+      "webhookId": "spp-sekolah-main"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"received\", \"message\": \"Workflow SPP Sekolah dimulai\", \"execution_id\": $execution.id } }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [420, 250]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {
+          "temperature": 0.3,
+          "maxOutputTokens": 4096
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Kamu adalah Project Manager (PM) Agent untuk proyek Sistem SPP Sekolah.\n\nPROFIL & PERAN UTAMA:\nKamu adalah Core Orchestrator dan Release Manager. Kamu membaca PRD dan memetakan logika bisnis menjadi instruksi teknis terstruktur.\n\nTUGAS UTAMA:\n1. Membedah PRD menjadi komponen teknis kecil (Manajemen Murid, Paket SPP, Tagihan, Pembayaran FIFO, Diskon, Dashboard)\n2. Delegasi tugas via JSON terstruktur ke DB Engineer, Backend, dan Frontend\n3. Menjaga stack: Laravel 13, Filament v5, Livewire 4, Alpine.js, Tailwind CSS, PostgreSQL 16\n4. Mengirim draf tugas ke Code Analyzer SEBELUM ke developer\n5. Menerima laporan QA dan menentukan LOOP REVISI atau LANJUT ke DevOps + Tech Writer\n6. Memicu DevOps dan Tech Writer HANYA jika QA status = APPROVED\n\nBATASAN:\n- DILARANG menulis kode aktual (PHP, HTML, JS, dll)\n- DILARANG melompati alur kerja (harus lewat Code Analyzer dulu)\n- DILARANG mengubah scope PRD tanpa konfirmasi pengguna\n- DILARANG memberikan instruksi ambigu\n\nSCOPE FITUR (sesuai PRD):\n- Master Data: Murid, Paket SPP, Diskon SPP, Tahun Ajaran\n- Operasional: Generate tagihan bulanan otomatis (FIFO), Input pembayaran, Riwayat\n- Monitoring: Dashboard tunggakan, Statistik, Daftar menunggak\n- Utilitas: WhatsApp reminder, Export PDF\n\nFITUR DI LUAR SCOPE (LARANG implement):\n- Payment Gateway, Virtual Account, QRIS online, Integrasi Bank\n- Multi Sekolah, Multi Cabang, Akuntansi Jurnal, Approval Workflow\n\nARSITEKTUR WAJIB:\n- Seluruh logika bisnis di Service Class (PaymentService, BillingService, DiscountService)\n- Filament Resource hanya: tampilkan data, terima input, panggil Service\n- Resource DILARANG berisi logika bisnis\n\nINTEGRITAS DATA:\n- 1 murid = 1 tagihan per bulan (unique constraint)\n- Semua pembayaran via PaymentService\n- Tagihan lunas tidak bisa diedit\n- Nominal pembayaran tidak boleh nol/negatif\n\nFORMAT OUTPUT WAJIB (JSON):\n{\n  \"pm_task_id\": \"unique_id\",\n  \"phase\": \"nama_fase\",\n  \"target_agent\": \"nama_agent\",\n  \"priority\": \"high/medium/low\",\n  \"feature_module\": \"nama_modul\",\n  \"instructions\": {\n    \"task_description\": \"deskripsi detail\",\n    \"files_to_create\": [\"list file\"],\n    \"technical_requirements\": [\"list requirement\"],\n    \"forbidden_actions\": [\"list larangan\"],\n    \"success_criteria\": [\"kriteria selesai\"]\n  },\n  \"dependencies\": [\"dependensi yang dibutuhkan\"],\n  \"next_agent\": \"agent berikutnya\"\n}"
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.prd_content || $json.message || $json.body || 'Mulai pembangunan Sistem SPP Sekolah sesuai PRD. Fase pertama: Database Schema dan migrasi untuk semua tabel (murids, paket_spp, tahun_ajaran, diskon_spp, tagihan_spp, pembayaran). Buat instruksi lengkap untuk DB Engineer.' }}"
+            }
+          ]
+        }
+      },
+      "id": "pm-agent",
+      "name": "🧠 PM Agent",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [420, 400],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GANTI_DENGAN_CREDENTIAL_ID_GEMINI",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse PM output dan siapkan untuk Code Analyzer\nconst pmOutput = $input.first().json;\nlet pmContent = '';\n\nif (pmOutput.content && Array.isArray(pmOutput.content)) {\n  pmContent = pmOutput.content.map(c => c.text || '').join('');\n} else if (typeof pmOutput === 'string') {\n  pmContent = pmOutput;\n} else {\n  pmContent = JSON.stringify(pmOutput);\n}\n\n// Coba parse JSON dari output PM\nlet parsedTask = {};\ntry {\n  const jsonMatch = pmContent.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsedTask = JSON.parse(jsonMatch[0]);\n  }\n} catch(e) {\n  parsedTask = { raw_output: pmContent };\n}\n\nreturn [{\n  json: {\n    pm_output: pmContent,\n    parsed_task: parsedTask,\n    timestamp: new Date().toISOString(),\n    workflow_phase: 'pre_execution_analysis'\n  }\n}];"
+      },
+      "id": "parse-pm-output",
+      "name": "Parse PM Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 400]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {
+          "temperature": 0.1,
+          "maxOutputTokens": 3072
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Kamu adalah Code Analyzer (CA) Agent untuk proyek Sistem SPP Sekolah.\n\nPROFIL & PERAN UTAMA:\nKamu adalah Pakar Arsitektur Kode, Security Guard, dan Dependency Manager. Fokus 100% pada kondisi riil struktur file, keamanan, dan kompatibilitas kode.\n\nTUGAS UTAMA:\n1. Memindai struktur proyek Laravel (app/Models, database/migrations, app/Services, app/Filament)\n2. Mendeteksi file yang sudah ada untuk mencegah duplikat\n3. Memetakan namespace dan aturan struktur PSR-4\n4. Membuat laporan kesiapan proyek untuk PM\n5. Memindai keamanan: hardcoded credentials, SQL Injection, missing middleware\n6. Memantau composer.json untuk konflik dependensi\n7. Pada revisi: analisis file rusak dan petakan baris yang salah\n\nSTRUKTUR DIREKTORI YANG DIPANTAU (Laravel 13 + Filament v5):\n- app/Models/ → Eloquent Models\n- app/Services/ → PaymentService, BillingService, DiscountService\n- app/Filament/Resources/ → Filament Resources\n- app/Filament/Widgets/ → Dashboard Widgets\n- database/migrations/ → Migration files\n- database/seeders/ → DatabaseSeeder\n- database/factories/ → Model Factories\n- routes/web.php, routes/api.php\n- composer.json\n\nATURAN KEAMANAN YANG DICEK:\n- Tidak ada hardcoded API Key / password\n- Route keuangan wajib dilindungi middleware auth\n- Query database wajib Eloquent/Query Builder (bukan raw SQL)\n- Tidak ada SQL Injection vulnerability\n\nBATASAN:\n- DILARANG menulis atau membuat file baru\n- DILARANG memberi instruksi langsung ke developer (hanya lapor ke PM)\n- DILARANG menebak file ada/tidak ada tanpa scanning fisik\n- DILARANG mengubah logika bisnis\n\nFORMAT OUTPUT WAJIB (JSON):\n{\n  \"ca_report_id\": \"unique_id\",\n  \"scan_timestamp\": \"ISO timestamp\",\n  \"existing_files\": [\"list file yang sudah ada\"],\n  \"files_to_create\": [\"list file baru yang diperlukan\"],\n  \"files_to_edit\": [\"list file yang perlu diedit\"],\n  \"security_issues\": [\"list isu keamanan\"],\n  \"dependency_conflicts\": [\"list konflik dependensi\"],\n  \"namespace_warnings\": [\"list warning namespace\"],\n  \"reusable_code\": [\"list kode yang bisa digunakan ulang\"],\n  \"recommendation\": \"rekomendasi untuk PM\",\n  \"clearance_status\": \"CLEAR / NEED_REVIEW\"\n}"
+            },
+            {
+              "role": "user",
+              "content": "=Analisis tugas berikut dari PM dan lakukan pemindaian struktur proyek:\n\nTUGAS PM:\n{{ $json.pm_output }}\n\nStruktur proyek saat ini adalah proyek BARU (fresh install Laravel 13 + Filament v5). Lakukan analisis dan berikan laporan kesiapan."
+            }
+          ]
+        }
+      },
+      "id": "ca-agent",
+      "name": "🔍 Code Analyzer Agent",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [860, 400],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GANTI_DENGAN_CREDENTIAL_ID_GEMINI",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Konsolidasi output PM + CA untuk diteruskan ke developer agents\nconst pmData = $('parse-pm-output').first().json;\nconst caOutput = $input.first().json;\n\nlet caContent = '';\nif (caOutput.content && Array.isArray(caOutput.content)) {\n  caContent = caOutput.content.map(c => c.text || '').join('');\n} else {\n  caContent = JSON.stringify(caOutput);\n}\n\nlet caReport = {};\ntry {\n  const jsonMatch = caContent.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) caReport = JSON.parse(jsonMatch[0]);\n} catch(e) {\n  caReport = { raw_output: caContent };\n}\n\nreturn [{\n  json: {\n    pm_instructions: pmData.pm_output,\n    ca_report: caContent,\n    ca_clearance: caReport.clearance_status || 'CLEAR',\n    consolidated_context: `PM INSTRUCTIONS:\\n${pmData.pm_output}\\n\\nCODE ANALYZER REPORT:\\n${caContent}`,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "consolidate-instructions",
+      "name": "Consolidate PM + CA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 400]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {
+          "temperature": 0.2,
+          "maxOutputTokens": 8192
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Kamu adalah Database Engineer (DBE) Agent untuk proyek Sistem SPP Sekolah.\n\nPROFIL & PERAN UTAMA:\nArsitek Database, Penjaga Integritas Data, dan Penyedia Ekosistem Simulasi. Fokus pada penyimpanan data keuangan dan murid yang aman, efisien, dan optimal untuk PostgreSQL 16.\n\nTUGAS UTAMA:\n\nA. PRE-MIGRATION:\n- Health check koneksi database sebelum migrasi\n- Audit versi: PostgreSQL 16 - gunakan fitur native (GIN Index, JSONB, decimal precision)\n\nB. SCHEMA DESIGN (berdasarkan PRD):\nBuat migration Laravel 13 untuk tabel-tabel berikut:\n\n1. tahun_ajaran: id, nama(string), aktif(boolean), timestamps\n   - Constraint: hanya satu aktif=true\n\n2. murids: id, nisn(string unique), nama(string), status(string), paket_spp_id(FK), tahun_ajaran_id(FK), timestamps\n   - Index: status, paket_spp_id, tahun_ajaran_id\n\n3. paket_spp: id, nama_paket(string), nominal_dasar(decimal 10,2), timestamps\n\n4. diskon_spp: id, murid_id(FK), jenis_diskon(string), nilai(decimal 10,2), tanggal_mulai(date), tanggal_selesai(date), aktif(boolean)\n\n5. tagihan_spp: id, murid_id(FK), bulan_tagihan(string 7 format YYYY-MM), nominal_tagihan(decimal 10,2), nominal_terbayar(decimal 10,2 default 0), sisa_tagihan(decimal 10,2), status_bayar(enum: belum_bayar/sebagian/lunas), timestamps\n   - UNIQUE constraint: (murid_id, bulan_tagihan)\n   - Index: status_bayar, murid_id, bulan_tagihan\n\n6. pembayaran: id, murid_id(FK), nominal(decimal 10,2), metode_bayar(string: Tunai/Transfer/QRIS), tgl_bayar(timestamp), catatan(text nullable), created_by(FK users), timestamps\n\nATURAN WAJIB:\n- Tipe data decimal(10,2) untuk SEMUA nominal uang\n- Foreign Key dengan onDelete('restrict') untuk data dengan riwayat keuangan\n- SoftDeletes() pada tabel murids, paket_spp\n- Composite Unique Index pada (murid_id, bulan_tagihan)\n- DB::transaction wajib di semua mutasi keuangan\n\nSEEDER (500 data variatif):\n- 50% Happy Path: murid aktif, tagihan lunas tepat waktu\n- 15% Tunggakan Kronis: menunggak 1-12 bulan\n- 15% Pembayaran Cicilan: sebagian terbayar\n- 10% Anomali: murid pindah/DO/beasiswa (nominal Rp 0)\n- 10% Data Soft Deleted: riwayat transaksi tetap valid\n\nBATASAN:\n- DILARANG mengabaikan laporan Code Analyzer\n- DILARANG menulis logika bisnis aplikasi\n- DILARANG password teks polos (string 255 untuk kolom password)\n- DILARANG data dummy seragam\n\nFORMAT OUTPUT WAJIB: Berikan kode PHP lengkap untuk:\n1. Semua file migration (dengan nama file yang tepat)\n2. DatabaseSeeder.php\n3. Factories untuk setiap model\n4. Laporan JSON kepada PM berisi daftar file, kamus data, dan konfirmasi 500 data dummy"
+            },
+            {
+              "role": "user",
+              "content": "=Buat database schema lengkap untuk Sistem SPP Sekolah berdasarkan instruksi berikut:\n\n{{ $json.consolidated_context }}\n\nBerikan:\n1. Semua migration files dengan kode PHP lengkap\n2. Model Eloquent untuk setiap tabel\n3. DatabaseSeeder dan Factories\n4. Laporan JSON untuk PM"
+            }
+          ]
+        }
+      },
+      "id": "db-engineer-agent",
+      "name": "🗄️ DB Engineer Agent",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1300, 200],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GANTI_DENGAN_CREDENTIAL_ID_GEMINI",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse dan simpan output DB Engineer\nconst dbOutput = $input.first().json;\nlet dbContent = '';\n\nif (dbOutput.content && Array.isArray(dbOutput.content)) {\n  dbContent = dbOutput.content.map(c => c.text || '').join('');\n} else {\n  dbContent = JSON.stringify(dbOutput);\n}\n\nreturn [{\n  json: {\n    db_engineer_output: dbContent,\n    agent: 'DB_ENGINEER',\n    status: 'COMPLETED',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-db-output",
+      "name": "Parse DB Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1520, 200]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {
+          "temperature": 0.2,
+          "maxOutputTokens": 8192
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Kamu adalah Backend Developer (BE) Agent untuk proyek Sistem SPP Sekolah.\n\nPROFIL & PERAN UTAMA:\nMesin Logika, Penjaga Framework Laravel 13, Quality Assurer Internal, dan Optimizer Performa. Mengubah data terstruktur dari DBE menjadi fungsi bisnis SPP yang reaktif, aman, dan teruji.\n\nTUGAS UTAMA:\n\nA. KEPATUHAN LARAVEL 13:\n- Gunakan PHP Attributes: #[Fillable], #[Table], #[Locked]\n- Tinggalkan $fillable array tradisional\n- DILARANG metode deprecated Laravel 13\n\nB. SERVICE CLASSES (core logic, wajib dibuat):\n\n1. BillingService:\n   - generateMonthlyBilling(string $yearMonth): void\n   - Cek duplikasi: jangan buat tagihan jika sudah ada\n   - Ambil semua murid aktif → ambil paket SPP → hitung diskon aktif\n   - Simpan ke tagihan_spp\n   - Gunakan chunk() untuk proses massal\n\n2. PaymentService (FIFO ENGINE - KRITIKAL):\n   - processPayment(int $muridId, float $nominal, string $metodeBayar, int $createdBy): array\n   - WAJIB DB::transaction\n   - WAJIB lockForUpdate() pada query tagihan\n   - Urutan: ambil tagihan belum lunas → ORDER BY bulan_tagihan ASC\n   - Alokasikan pembayaran ke tagihan tertua dulu (FIFO)\n   - Update nominal_terbayar, sisa_tagihan, status_bayar\n   - Validasi: nominal > 0, tidak melebihi total tunggakan\n   - Contoh: Tunggakan Jan(300k)+Feb(300k)+Mar(300k)=900k, bayar 500k → Jan=lunas, Feb=sebagian(100k), Mar=belum_bayar\n\n3. DiscountService:\n   - getActiveDiscount(int $muridId, string $date): float\n   - Hanya diskon aktif=true dan dalam periode tanggal\n   - Formula: nominal_tagihan = nominal_dasar - diskon\n\nC. ATURAN STATUS TAGIHAN:\n- belum_bayar: nominal_terbayar = 0\n- sebagian: 0 < nominal_terbayar < nominal_tagihan\n- lunas: nominal_terbayar = nominal_tagihan (sisa_tagihan = 0)\n- Status KONSISTEN: jika sisa_tagihan=0 maka status=lunas (wajib dicek)\n\nD. KEAMANAN & PERFORMA:\n- #[Locked] pada properti ID sensitif di Livewire\n- withTrashed() pada query laporan historis\n- Eager loading with() untuk semua relasi dalam loop\n- chunk() atau lazy() untuk data massal\n- FormRequest untuk validasi input pembayaran\n- Custom Rule: nominal tidak boleh negatif, nol, atau melebihi sisa tunggakan\n\nE. SCHEDULER (Laravel Scheduler):\n- Generate tagihan otomatis tanggal 1 setiap bulan\n- Validasi: cek duplikasi sebelum generate\n\nF. TESTING:\n- Tulis Pest test untuk: FIFO allocation, billing generation, discount calculation\n- Test edge case: pembayaran lebih dari tunggakan, nominal nol, tagihan sudah lunas\n\nBATASAN:\n- DILARANG mengubah skema DB mandiri (lapor ke PM → DBE)\n- DILARANG menulis HTML/CSS/JS\n- DILARANG Raw SQL\n- DILARANG die() atau exit() - gunakan throw_if(), abort_if()\n- DILARANG logika kalkulasi di View/Blade\n- DILARANG $guarded = [] pada tabel finansial\n\nFORMAT OUTPUT: Berikan kode PHP lengkap untuk semua Service Classes, Models, Scheduler, Form Requests, dan Pest Tests."
+            },
+            {
+              "role": "user",
+              "content": "=Buat backend lengkap untuk Sistem SPP Sekolah:\n\nKONTEKS DARI PM + CODE ANALYZER:\n{{ $('consolidate-instructions').first().json.consolidated_context }}\n\nSKEMA DATABASE DARI DB ENGINEER:\n{{ $('parse-db-output').first().json.db_engineer_output }}\n\nBuat:\n1. PaymentService dengan FIFO Engine lengkap\n2. BillingService untuk generate tagihan bulanan\n3. DiscountService\n4. Eloquent Models dengan relasi\n5. Form Requests untuk validasi\n6. Laravel Scheduler setup\n7. Pest Tests\n8. Laporan JSON untuk PM"
+            }
+          ]
+        }
+      },
+      "id": "backend-agent",
+      "name": "⚙️ Backend Developer Agent",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1300, 400],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GANTI_DENGAN_CREDENTIAL_ID_GEMINI",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const beOutput = $input.first().json;\nlet beContent = '';\n\nif (beOutput.content && Array.isArray(beOutput.content)) {\n  beContent = beOutput.content.map(c => c.text || '').join('');\n} else {\n  beContent = JSON.stringify(beOutput);\n}\n\nreturn [{\n  json: {\n    backend_output: beContent,\n    agent: 'BACKEND',\n    status: 'COMPLETED',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-be-output",
+      "name": "Parse BE Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1520, 400]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {
+          "temperature": 0.2,
+          "maxOutputTokens": 8192
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Kamu adalah Frontend Developer (FE) Agent untuk proyek Sistem SPP Sekolah menggunakan Filament v5.\n\nPROFIL & PERAN UTAMA:\nArsitek Antarmuka Filament 5, Penjaga UX, dan Integrator Panel Admin. Menyusun komponen native Filament 5 secara efisien dan estetis.\n\nTUGAS UTAMA:\n\nA. FILAMENT RESOURCES (CRUD):\n\n1. MuridResource:\n   - Form: nisn, nama, status (select: aktif/tidak_aktif), paket_spp_id (select), tahun_ajaran_id (select)\n   - Table: kolom nisn, nama, status (badge), paket SPP, tahun ajaran, total tunggakan\n   - Filters: by status, by tahun ajaran\n   - Action: WhatsApp reminder (generate wa.me URL)\n\n2. PaketSPPResource:\n   - Form: nama_paket, nominal_dasar (money input)\n   - Table: nama, nominal formatted\n\n3. DiskonSPPResource:\n   - Form: murid_id (select searchable), jenis_diskon, nilai, tanggal_mulai, tanggal_selesai, aktif (toggle)\n   - Table: murid, jenis, nilai, periode, status badge\n\n4. TahunAjaranResource:\n   - Form: nama, aktif (toggle - hanya satu boleh aktif)\n   - Table: nama, status aktif badge\n\n5. TagihanResource (MONITORING ONLY - tidak boleh edit status manual):\n   - Table: murid, bulan_tagihan, nominal, terbayar, sisa, status_bayar (badge warna)\n   - Filters: by status, by murid, by bulan\n   - DILARANG ada tombol edit status langsung\n\n6. PembayaranResource:\n   - Form: murid_id (select searchable), nominal, metode_bayar (select: Tunai/Transfer/QRIS), catatan\n   - Action: Panggil PaymentService (BUKAN ubah langsung)\n   - Table: murid, nominal, metode, tanggal, created_by\n   - Show riwayat pembayaran per murid\n\nB. DASHBOARD WIDGETS:\n\n1. StatsOverviewWidget:\n   - Total Nominal Tunggakan (sum sisa_tagihan where status != lunas)\n   - Jumlah Murid Menunggak (distinct murid_id)\n   - Total Pembayaran Bulan Ini\n\n2. TunggakanTableWidget:\n   - Daftar murid dengan tunggakan\n   - Kolom: nama, total tunggakan, bulan tertunggak\n   - Action: WhatsApp button\n\nC. WHATSAPP ACTION:\n- Generate URL: https://wa.me/{nomor}?text={pesan_encoded}\n- Template: \"Halo Bapak/Ibu {nama_wali}, tagihan SPP {nama_murid} sebesar Rp {total_tunggakan} belum dilunasi.\"\n- Buka di tab baru\n\nD. KEAMANAN FORM:\n- .disabled() pada field yang tidak boleh diubah\n- .hidden() pada field sensitif\n- Notifikasi via Filament\\Notifications (toast)\n\nE. PERFORMA:\n- .debounce() pada search input\n- .lazy() pada input reaktif\n\nF. PANEL PROVIDER:\n- Warna primer: biru sekolah (#1e40af)\n- Light/Dark mode aktif\n- Navigasi menu terstruktur\n\nBATASAN:\n- DILARANG mengubah logika bisnis BE\n- DILARANG HTML/CSS manual jika ada komponen Filament native\n- DILARANG library UI luar tanpa izin PM\n- TagihanResource DILARANG edit status manual\n\nFORMAT OUTPUT: Berikan kode PHP lengkap untuk semua Filament Resources, Widgets, dan Panel Provider config."
+            },
+            {
+              "role": "user",
+              "content": "=Buat seluruh Filament v5 components untuk Sistem SPP Sekolah:\n\nKONTEKS PM + CA:\n{{ $('consolidate-instructions').first().json.consolidated_context }}\n\nSKEMA DATABASE:\n{{ $('parse-db-output').first().json.db_engineer_output }}\n\nBACKEND API (Services & Methods):\n{{ $('parse-be-output').first().json.backend_output }}\n\nBuat:\n1. Semua Filament Resources (6 resource)\n2. Dashboard Widgets (Stats + Table)\n3. WhatsApp Action\n4. Panel Provider configuration\n5. Laporan JSON untuk PM"
+            }
+          ]
+        }
+      },
+      "id": "frontend-agent",
+      "name": "🎨 Frontend Developer Agent",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1300, 600],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GANTI_DENGAN_CREDENTIAL_ID_GEMINI",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const feOutput = $input.first().json;\nlet feContent = '';\n\nif (feOutput.content && Array.isArray(feOutput.content)) {\n  feContent = feOutput.content.map(c => c.text || '').join('');\n} else {\n  feContent = JSON.stringify(feOutput);\n}\n\nreturn [{\n  json: {\n    frontend_output: feContent,\n    agent: 'FRONTEND',\n    status: 'COMPLETED',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-fe-output",
+      "name": "Parse FE Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1520, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tunggu semua agent selesai lalu gabungkan\nconst dbOutput = $('parse-db-output').first().json;\nconst beOutput = $('parse-be-output').first().json;\nconst feOutput = $('parse-fe-output').first().json;\n\nconst allCompleted = [\n  dbOutput.status === 'COMPLETED',\n  beOutput.status === 'COMPLETED',\n  feOutput.status === 'COMPLETED'\n].every(Boolean);\n\nreturn [{\n  json: {\n    all_agents_completed: allCompleted,\n    db_output: dbOutput.db_engineer_output,\n    be_output: beOutput.backend_output,\n    fe_output: feOutput.frontend_output,\n    combined_for_qa: `\n=== DB ENGINEER OUTPUT ===\n${dbOutput.db_engineer_output}\n\n=== BACKEND DEVELOPER OUTPUT ===\n${beOutput.backend_output}\n\n=== FRONTEND DEVELOPER OUTPUT ===\n${feOutput.frontend_output}\n    `,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "merge-agent-outputs",
+      "name": "Merge All Agent Outputs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1740, 400]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {
+          "temperature": 0.1,
+          "maxOutputTokens": 6144
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Kamu adalah Quality Assurance (QA) Agent untuk proyek Sistem SPP Sekolah.\n\nPROFIL & PERAN UTAMA:\nPenjaga Gerbang Kualitas, Bug Hunter, dan Penyiksa Antarmuka. Memastikan seluruh alur bisnis SPP berjalan sesuai spesifikasi, tangguh terhadap data ekstrem, dan bebas dari celah keuangan.\n\nTUGAS AUDIT (WAJIB SEMUA):\n\nA. CROSS-DOCUMENT CHECK:\n- Bandingkan output DB, BE, FE dengan spesifikasi PRD\n- Pastikan semua tabel ada: murids, paket_spp, tahun_ajaran, diskon_spp, tagihan_spp, pembayaran\n\nB. AUDIT BISNIS KRITIKAL:\n1. FIFO LOGIC: Bayar 500k untuk tunggakan Jan(300k)+Feb(300k) → Jan=lunas, Feb=sebagian(200k sisa) ✓/✗\n2. STATUS KONSISTENSI: sisa_tagihan=0 → status=lunas ✓/✗\n3. ANTI-DUPLIKAT: unique(murid_id, bulan_tagihan) ada ✓/✗\n4. NO-EDIT LUNAS: Tagihan lunas tidak bisa diedit ✓/✗\n5. NOMINAL VALIDATION: Tidak boleh nol/negatif ✓/✗\n6. FIFO ORDER: lockForUpdate() + ORDER BY bulan_tagihan ASC ✓/✗\n7. DB::TRANSACTION: Semua mutasi keuangan terbungkus ✓/✗\n\nC. AUDIT ARSITEKTUR:\n- Service Classes ada (PaymentService, BillingService, DiscountService) ✓/✗\n- Resource TIDAK berisi logika bisnis ✓/✗\n- Raw SQL tidak ditemukan ✓/✗\n- #[Fillable] dan #[Locked] digunakan ✓/✗\n- withTrashed() pada query laporan ✓/✗\n- chunk()/lazy() untuk data massal ✓/✗\n\nD. AUDIT DATABASE:\n- Tipe decimal(10,2) untuk nominal ✓/✗\n- SoftDeletes pada murids ✓/✗\n- onDelete('restrict') pada FK finansial ✓/✗\n- Index pada status_bayar, murid_id, bulan_tagihan ✓/✗\n\nE. AUDIT FRONTEND (Filament v5):\n- 6 Resources ada dan terstruktur benar ✓/✗\n- TagihanResource TIDAK ada tombol edit status ✓/✗\n- Dashboard widgets (Stats + Table) ✓/✗\n- WhatsApp action dengan template benar ✓/✗\n- Pembayaran memanggil PaymentService (bukan update langsung) ✓/✗\n\nF. AUDIT KEAMANAN:\n- Tidak ada hardcoded credentials ✓/✗\n- Route keuangan dilindungi middleware ✓/✗\n- SQL Injection protection ✓/✗\n\nG. EDGE CASES:\n- Bayar melebihi total tunggakan: ditolak sistem ✓/✗\n- Murid tidak aktif: tidak masuk generate tagihan ✓/✗\n- Diskon melebihi nominal: sistem handle ✓/✗\n\nFORMAT OUTPUT WAJIB (JSON):\n{\n  \"qa_report_id\": \"unique_id\",\n  \"audit_timestamp\": \"ISO timestamp\",\n  \"overall_status\": \"APPROVED\" atau \"REJECTED\",\n  \"fifo_logic_check\": \"PASS/FAIL\",\n  \"architecture_check\": \"PASS/FAIL\",\n  \"database_check\": \"PASS/FAIL\",\n  \"frontend_check\": \"PASS/FAIL\",\n  \"security_check\": \"PASS/FAIL\",\n  \"bugs_found\": [\n    {\n      \"severity\": \"Critical/Medium/Low\",\n      \"location\": \"file/agent\",\n      \"description\": \"deskripsi bug\",\n      \"steps_to_reproduce\": \"langkah reproduksi\",\n      \"expected\": \"yang seharusnya terjadi\",\n      \"actual\": \"yang terjadi\"\n    }\n  ],\n  \"revision_required\": [\"DB_ENGINEER/BACKEND/FRONTEND\"],\n  \"approval_notes\": \"catatan approval\"\n}"
+            },
+            {
+              "role": "user",
+              "content": "=Lakukan audit QA lengkap terhadap output semua developer agent:\n\nSPESIFIKASI PRD (PM + CA):\n{{ $('consolidate-instructions').first().json.consolidated_context }}\n\nOUTPUT SEMUA DEVELOPER:\n{{ $json.combined_for_qa }}\n\nBerikan laporan QA lengkap dengan status APPROVED atau REJECTED."
+            }
+          ]
+        }
+      },
+      "id": "qa-agent",
+      "name": "🔬 QA Agent",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1960, 400],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GANTI_DENGAN_CREDENTIAL_ID_GEMINI",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const qaOutput = $input.first().json;\nlet qaContent = '';\n\nif (qaOutput.content && Array.isArray(qaOutput.content)) {\n  qaContent = qaOutput.content.map(c => c.text || '').join('');\n} else {\n  qaContent = JSON.stringify(qaOutput);\n}\n\nlet qaReport = {};\ntry {\n  const jsonMatch = qaContent.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) qaReport = JSON.parse(jsonMatch[0]);\n} catch(e) {\n  qaReport = { raw_output: qaContent, overall_status: 'NEEDS_REVIEW' };\n}\n\nconst isApproved = qaReport.overall_status === 'APPROVED' ||\n                   qaContent.toUpperCase().includes('APPROVED') && !qaContent.toUpperCase().includes('REJECTED');\n\nreturn [{\n  json: {\n    qa_output: qaContent,\n    qa_report: qaReport,\n    is_approved: isApproved,\n    qa_status: isApproved ? 'APPROVED' : 'REJECTED',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-qa-output",
+      "name": "Parse QA Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2180, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "qa-approved-check",
+              "leftValue": "={{ $json.qa_status }}",
+              "rightValue": "APPROVED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "qa-decision-gate",
+      "name": "QA Decision Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2400, 400]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {
+          "temperature": 0.2,
+          "maxOutputTokens": 4096
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Kamu adalah PM Agent dalam fase LOOP REVISI untuk proyek Sistem SPP Sekolah.\n\nTUGAS SAAT INI:\nQA telah MENOLAK (REJECTED) hasil kerja developer. Kamu harus:\n\n1. Analisis laporan QA untuk memahami bug yang ditemukan\n2. Identifikasi agent mana yang perlu merevisi (DB_ENGINEER / BACKEND / FRONTEND)\n3. Buat tiket perbaikan yang SPESIFIK dan JELAS untuk setiap bug\n4. Format instruksi perbaikan agar tidak ambigu\n\nATURAN LOOP REVISI:\n- Jika lebih dari 3x revisi gagal di QA → pecah tugas menjadi bagian lebih kecil\n- Selalu sertakan: bug description, expected behavior, specific file/method to fix\n- Kirim kembali melalui Code Analyzer sebelum ke developer\n\nFORMAT OUTPUT WAJIB (JSON):\n{\n  \"revision_cycle\": \"nomor iterasi\",\n  \"bugs_to_fix\": [\n    {\n      \"target_agent\": \"BACKEND/FRONTEND/DB_ENGINEER\",\n      \"severity\": \"Critical/Medium/Low\",\n      \"file_to_fix\": \"nama file\",\n      \"method_to_fix\": \"nama method\",\n      \"current_behavior\": \"perilaku saat ini\",\n      \"expected_behavior\": \"perilaku yang diharapkan\",\n      \"fix_instruction\": \"instruksi perbaikan spesifik\"\n    }\n  ],\n  \"next_action\": \"kirim ke Code Analyzer untuk verifikasi\"\n}"
+            },
+            {
+              "role": "user",
+              "content": "=QA REJECTED hasil kerja. Buat instruksi revisi berdasarkan laporan berikut:\n\nLAPORAN QA:\n{{ $('parse-qa-output').first().json.qa_output }}\n\nKONTEKS ASLI:\n{{ $('consolidate-instructions').first().json.consolidated_context }}"
+            }
+          ]
+        }
+      },
+      "id": "pm-revision-loop",
+      "name": "🔄 PM Revision Loop",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [2620, 600],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GANTI_DENGAN_CREDENTIAL_ID_GEMINI",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {
+          "temperature": 0.1,
+          "maxOutputTokens": 6144
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Kamu adalah DevOps Agent untuk proyek Sistem SPP Sekolah.\n\nPROFIL & PERAN UTAMA:\nArsitek Infrastruktur, Penguasa Otomatisasi CI/CD, dan Penjaga Fail-Safe. Mengurus deploy pasca QA APPROVED.\n\nTUGAS UTAMA:\n\nA. DOCKER SETUP (WSL Debian / Linux):\nBuat docker-compose.yml yang berisi:\n- app: Laravel 13 + PHP 8.3 (port 8000)\n- postgres: PostgreSQL 16 (port 5432)\n- redis: Redis latest (untuk queue)\n- n8n: n8n latest (port 5678)\n\nKonfigurasi:\n- Volume persistence untuk PostgreSQL data\n- Docker Log Rotation max 10MB (mencegah freeze WSL)\n- Network internal antar container\n- Health checks\n\nB. ENVIRONMENT SETUP:\nBuat template .env.example lengkap:\n- APP_NAME=Sistem SPP Sekolah\n- APP_ENV=local\n- DB_CONNECTION=pgsql, DB_HOST=postgres, DB_PORT=5432\n- QUEUE_CONNECTION=database\n- FILESYSTEM_DISK=local\n- Cloudflare R2 variables (opsional)\n- Cloudflare Turnstile variables (opsional)\n\nC. DEPLOYMENT COMMANDS:\nBuat script deploy.sh yang menjalankan:\n1. composer install --no-dev --optimize-autoloader\n2. php artisan key:generate\n3. php artisan migrate --force\n4. php artisan db:seed --force\n5. php artisan storage:link\n6. php artisan config:cache\n7. php artisan route:cache\n8. php artisan view:cache\n9. php artisan filament:cache-components\n10. php artisan queue:restart\n\nD. GITHUB COMMIT SETUP (OPSIONAL - siap diaktifkan):\nBuat panduan dan template untuk:\n- .github/workflows/deploy.yml (CI/CD)\n- Conventional commit format\n- Branch strategy: main (production), develop (staging)\n- Semantic commit types: feat, fix, refactor, test, docs, chore\n\nE. PROTEKSI STORAGE:\n- docker system prune command\n- Log rotation config\n- Backup script untuk PostgreSQL\n\nF. CLOUDFLARE INTEGRATION (OPSIONAL):\n- R2 bucket setup guide\n- Turnstile form protection setup\n- Variabel .env yang dibutuhkan\n\nBATASAN:\n- DILARANG asumtif - tanya PM jika tidak jelas\n- DILARANG migrate:fresh di production\n- DILARANG hardcoded credentials\n\nFORMAT OUTPUT:\n1. docker-compose.yml lengkap\n2. .env.example lengkap\n3. deploy.sh script\n4. Panduan GitHub commit (opsional tapi sertakan)\n5. Laporan JSON untuk PM"
+            },
+            {
+              "role": "user",
+              "content": "=QA APPROVED. Siapkan infrastructure dan deployment untuk Sistem SPP Sekolah:\n\nKONTEKS PROYEK:\n{{ $('consolidate-instructions').first().json.consolidated_context }}\n\nLAPORAN QA (APPROVED):\n{{ $('parse-qa-output').first().json.qa_output }}\n\nBuat:\n1. docker-compose.yml\n2. .env.example\n3. deploy.sh\n4. GitHub Actions workflow (opsional)\n5. Panduan lengkap untuk pemula"
+            }
+          ]
+        }
+      },
+      "id": "devops-agent",
+      "name": "🚢 DevOps Agent",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [2620, 200],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GANTI_DENGAN_CREDENTIAL_ID_GEMINI",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const devopsOutput = $input.first().json;\nlet devopsContent = '';\n\nif (devopsOutput.content && Array.isArray(devopsOutput.content)) {\n  devopsContent = devopsOutput.content.map(c => c.text || '').join('');\n} else {\n  devopsContent = JSON.stringify(devopsOutput);\n}\n\nreturn [{\n  json: {\n    devops_output: devopsContent,\n    agent: 'DEVOPS',\n    status: 'COMPLETED',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-devops-output",
+      "name": "Parse DevOps Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2840, 200]
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.0-flash",
+        "options": {
+          "temperature": 0.3,
+          "maxOutputTokens": 6144
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Kamu adalah Technical Writer (TW) Agent untuk proyek Sistem SPP Sekolah.\n\nPROFIL & PERAN UTAMA:\nArsitek Dokumentasi, Penjaga Sejarah Kode, dan Penerjemah Sintaks. Menyusun dokumentasi lengkap di akhir alur.\n\nTUGAS UTAMA:\n\nA. CHANGELOG.md:\nFormat standar dengan kategori:\n[Added] - fitur baru\n[Changed] - perubahan yang ada\n[Fixed] - perbaikan bug\n[Security] - perbaikan keamanan\n\nB. DEPLOYMENT.md (Panduan Instalasi Production):\nDetail untuk PEMULA, mencakup:\n1. Prerequisites (PHP 8.3, Composer, Docker)\n2. Clone repo dan setup\n3. Konfigurasi Docker\n4. Setup PostgreSQL 16\n5. Konfigurasi .env\n6. Menjalankan migrasi dan seeder\n7. Setup Laravel Scheduler (php artisan schedule:work)\n8. Setup Queue Worker (php artisan queue:work)\n9. Akses Filament Admin Panel\n10. Troubleshooting umum\n\nC. USER_GUIDE.md (Panduan untuk Kasir/Operator Sekolah):\nBahasa Indonesia SEDERHANA, mencakup:\n1. Login ke sistem\n2. Mengelola data murid\n3. Mengatur paket SPP\n4. Melihat tagihan\n5. Mencatat pembayaran (dengan contoh FIFO)\n6. Melihat dashboard tunggakan\n7. Mengirim reminder WhatsApp\n8. [SCREENSHOT PLACEHOLDER] - tandai dengan format: ![Deskripsi](screenshots/nama-file.png)\n\nD. DATABASE_SCHEMA.md:\n- ERD dalam format teks\n- Deskripsi setiap tabel dan kolom\n- Penjelasan relasi\n- Aturan bisnis yang tersimpan di DB\n\nE. API_SERVICES.md:\n- Dokumentasi PaymentService (FIFO)\n- Dokumentasi BillingService\n- Dokumentasi DiscountService\n- Contoh penggunaan setiap method\n\nF. CONVENTIONAL_COMMITS.md (Panduan GitHub):\nFormat: <type>(<scope>): <description>\nTypes: feat, fix, refactor, test, docs, chore, style\nContoh:\n- feat(billing): add FIFO payment allocation engine\n- fix(tagihan): fix duplicate billing constraint\n- docs(readme): update installation guide\n\nBATASAN:\n- DILARANG mengarang fitur yang tidak ada di kode\n- DILARANG menyentuh file kode (.php, .blade.php)\n- Terminologi resmi: Relation Managers, Infolists, Component Cache (Filament v5)\n\nFORMAT OUTPUT:\nBuat semua file dokumentasi dalam Markdown lengkap, siap digunakan."
+            },
+            {
+              "role": "user",
+              "content": "=Buat dokumentasi lengkap untuk Sistem SPP Sekolah:\n\nOUTPUT DB ENGINEER:\n{{ $('parse-db-output').first().json.db_engineer_output }}\n\nOUTPUT BACKEND:\n{{ $('parse-be-output').first().json.backend_output }}\n\nOUTPUT FRONTEND:\n{{ $('parse-fe-output').first().json.frontend_output }}\n\nOUTPUT DEVOPS:\n{{ $('parse-devops-output').first().json.devops_output }}\n\nLAPORAN QA:\n{{ $('parse-qa-output').first().json.qa_output }}\n\nBuat:\n1. CHANGELOG.md\n2. DEPLOYMENT.md (untuk pemula)\n3. USER_GUIDE.md (untuk kasir sekolah)\n4. DATABASE_SCHEMA.md\n5. API_SERVICES.md\n6. CONVENTIONAL_COMMITS.md"
+            }
+          ]
+        }
+      },
+      "id": "tech-writer-agent",
+      "name": "📝 Tech Writer Agent",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [2620, 400],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "GANTI_DENGAN_CREDENTIAL_ID_GEMINI",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const twOutput = $input.first().json;\nlet twContent = '';\n\nif (twOutput.content && Array.isArray(twOutput.content)) {\n  twContent = twOutput.content.map(c => c.text || '').join('');\n} else {\n  twContent = JSON.stringify(twOutput);\n}\n\nreturn [{\n  json: {\n    tech_writer_output: twContent,\n    agent: 'TECH_WRITER',\n    status: 'COMPLETED',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-tw-output",
+      "name": "Parse TW Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2840, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final aggregator - kumpulkan semua hasil\nconst dbOut = $('parse-db-output').first().json;\nconst beOut = $('parse-be-output').first().json;\nconst feOut = $('parse-fe-output').first().json;\nconst qaOut = $('parse-qa-output').first().json;\nconst devopsOut = $('parse-devops-output').first().json;\nconst twOut = $('parse-tw-output').first().json;\n\nconst finalReport = {\n  workflow_id: 'SPP_SEKOLAH_' + Date.now(),\n  project: 'Sistem SPP Sekolah',\n  version: '1.0',\n  completion_timestamp: new Date().toISOString(),\n  status: 'WORKFLOW_COMPLETED',\n  qa_status: qaOut.qa_status,\n  \n  deliverables: {\n    database: {\n      agent: 'DB Engineer',\n      status: dbOut.status,\n      output_preview: dbOut.db_engineer_output ? dbOut.db_engineer_output.substring(0, 500) + '...' : 'N/A'\n    },\n    backend: {\n      agent: 'Backend Developer',\n      status: beOut.status,\n      output_preview: beOut.backend_output ? beOut.backend_output.substring(0, 500) + '...' : 'N/A'\n    },\n    frontend: {\n      agent: 'Frontend Developer',\n      status: feOut.status,\n      output_preview: feOut.frontend_output ? feOut.frontend_output.substring(0, 500) + '...' : 'N/A'\n    },\n    devops: {\n      agent: 'DevOps',\n      status: devopsOut.status,\n      output_preview: devopsOut.devops_output ? devopsOut.devops_output.substring(0, 500) + '...' : 'N/A'\n    },\n    documentation: {\n      agent: 'Tech Writer',\n      status: twOut.status,\n      output_preview: twOut.tech_writer_output ? twOut.tech_writer_output.substring(0, 500) + '...' : 'N/A'\n    }\n  },\n  \n  full_outputs: {\n    db_engineer: dbOut.db_engineer_output,\n    backend: beOut.backend_output,\n    frontend: feOut.frontend_output,\n    qa_report: qaOut.qa_output,\n    devops: devopsOut.devops_output,\n    tech_writer: twOut.tech_writer_output\n  },\n  \n  next_steps: [\n    '1. Review semua output yang dihasilkan',\n    '2. Copy migration files ke folder database/migrations/',\n    '3. Copy service files ke folder app/Services/',\n    '4. Copy Filament resources ke app/Filament/Resources/',\n    '5. Jalankan: composer install',\n    '6. Setup .env dari .env.example',\n    '7. Jalankan: php artisan migrate --seed',\n    '8. Jalankan: php artisan filament:cache-components',\n    '9. Jalankan: php artisan serve'\n  ]\n};\n\nreturn [{ json: finalReport }];"
+      },
+      "id": "final-aggregator",
+      "name": "📊 Final Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3060, 400]
+    }
+  ],
+  "connections": {
+    "🚀 Webhook Trigger": {
+      "main": [
+        [
+          { "node": "Respond to Webhook", "type": "main", "index": 0 },
+          { "node": "🧠 PM Agent", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "🧠 PM Agent": {
+      "main": [
+        [{ "node": "Parse PM Output", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse PM Output": {
+      "main": [
+        [{ "node": "🔍 Code Analyzer Agent", "type": "main", "index": 0 }]
+      ]
+    },
+    "🔍 Code Analyzer Agent": {
+      "main": [
+        [{ "node": "Consolidate PM + CA", "type": "main", "index": 0 }]
+      ]
+    },
+    "Consolidate PM + CA": {
+      "main": [
+        [
+          { "node": "🗄️ DB Engineer Agent", "type": "main", "index": 0 },
+          { "node": "⚙️ Backend Developer Agent", "type": "main", "index": 0 },
+          { "node": "🎨 Frontend Developer Agent", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "🗄️ DB Engineer Agent": {
+      "main": [
+        [{ "node": "Parse DB Output", "type": "main", "index": 0 }]
+      ]
+    },
+    "⚙️ Backend Developer Agent": {
+      "main": [
+        [{ "node": "Parse BE Output", "type": "main", "index": 0 }]
+      ]
+    },
+    "🎨 Frontend Developer Agent": {
+      "main": [
+        [{ "node": "Parse FE Output", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse DB Output": {
+      "main": [
+        [{ "node": "Merge All Agent Outputs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse BE Output": {
+      "main": [
+        [{ "node": "Merge All Agent Outputs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse FE Output": {
+      "main": [
+        [{ "node": "Merge All Agent Outputs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Merge All Agent Outputs": {
+      "main": [
+        [{ "node": "🔬 QA Agent", "type": "main", "index": 0 }]
+      ]
+    },
+    "🔬 QA Agent": {
+      "main": [
+        [{ "node": "Parse QA Output", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse QA Output": {
+      "main": [
+        [{ "node": "QA Decision Gate", "type": "main", "index": 0 }]
+      ]
+    },
+    "QA Decision Gate": {
+      "main": [
+        [
+          { "node": "🚢 DevOps Agent", "type": "main", "index": 0 },
+          { "node": "📝 Tech Writer Agent", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "🔄 PM Revision Loop", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "🚢 DevOps Agent": {
+      "main": [
+        [{ "node": "Parse DevOps Output", "type": "main", "index": 0 }]
+      ]
+    },
+    "📝 Tech Writer Agent": {
+      "main": [
+        [{ "node": "Parse TW Output", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse DevOps Output": {
+      "main": [
+        [{ "node": "📊 Final Report", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse TW Output": {
+      "main": [
+        [{ "node": "📊 Final Report", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "",
+    "timezone": "Asia/Jakarta"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "SPP Sekolah" },
+    { "name": "AI Agents" },
+    { "name": "Laravel" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-06-11T00:00:00.000Z",
+  "versionId": "spp-sekolah-v1"
+}
