@@ -2,88 +2,86 @@
 
 ## COMPLETED STEPS
 
-### ✅ Step 1: Docker & Environment Setup
-- `docker-compose.yml` — services: app (PHP 8.3), nginx, postgres 16, redis 7, scheduler (loop), queue worker
-- `Dockerfile` — PHP 8.3-fpm-alpine + ext (pdo_pgsql, gd, zip, intl, redis, opcache) + composer
-- `docker/nginx/default.conf` — nginx vhost → php-fpm:9000
-- `docker/php/php.ini` — timezone Asia/Jakarta, upload 20M, opcache
-- `.env.example` — pgsql + redis + FILESYSTEM_DISK toggle (local ↔ s3/R2)
-- `composer.json` — Laravel 13 + Filament 5 + Livewire 4 + Spatie MediaLibrary + barryvdh/laravel-dompdf + predis
+### Phase 1 - Core MVP (Steps 1-6)
+- Docker stack, migrations, models, InvoiceGeneratorService, PaymentService (FIFO+Partial), Filament resources, PDF Blade templates.
+- See git history + earlier version of this doc for details.
 
-### ✅ Step 2: Migrations + Models
-- Migrations: users, sessions, school_profiles, academic_years, parents_data, students, student_enrollments, discounts, invoices, payments, payment_allocations
-- Models: `SchoolProfile` (HasMedia, `singleFile` logo), `AcademicYear` (auto-deactivate others on save), `ParentModel`, `Student`, `StudentEnrollment` (pivot Student×AcademicYear with `base_spp_amount`), `Discount` (`isActiveFor($month, $year)`), `Invoice` (uses `InvoiceStatus` enum, `recalculate()` from allocations), `Payment` (HasMedia `proof` collection on configurable disk), `PaymentAllocation` (FIFO pivot), `User` (Filament `canAccessPanel`)
-- Native Enums: `InvoiceStatus` (Unpaid/Partial/Paid, implements HasColor+HasLabel), `PaymentMethod` (Cash/Transfer)
+### Phase 2 - Add-on Features (2026-02)
 
-### ✅ Step 3: Auto-Generate Command
-- `App\Services\InvoiceGeneratorService::generateForMonth($month, $year)` — factors in **active Discounts** for that specific month/year (Case 3)
-- `App\Console\Commands\GenerateMonthlyInvoicesCommand` (signature `spp:generate-invoices --month --year`)
-- `routes/console.php` uses native Laravel 13 `Schedule::` facade: monthly on day 1 @ 00:00 Asia/Jakarta, `withoutOverlapping()->onOneServer()`
+#### ✅ 1. Dashboard Widgets
+- `app/Filament/Widgets/FinancialStatsWidget.php` — 3 stats: Pemasukan Bulan Ini (dengan sparkline 7 hari), Total Tunggakan, Siswa Aktif; polling 60s
+- `app/Filament/Widgets/SiswaTunggakanWidget.php` — Top-10 siswa tunggakan tertinggi (Postgres `HAVING` + `groupBy`) dengan NISN, nama, WA, jumlah invoice belum lunas, total tunggakan
+- `app/Filament/Widgets/PemasukanChartWidget.php` — Line chart 6 bulan terakhir
+- `AdminPanelProvider` diperbarui: register 3 widget di dashboard
 
-### ✅ Step 4: Payment Logic (Case 1 FIFO + Case 2 Partial)
-- `App\Services\PaymentService::recordPayment()` wraps everything in `DB::transaction` + `lockForUpdate()`
-- FIFO: fetches all invoices for student with `remaining_balance > 0` ordered by year/month/id, applies `min(remaining, invoice.remaining_balance)` to each until amount exhausted
-- Partial: after each allocation, calls `Invoice::recalculate()` which recomputes `total_paid`, `remaining_balance`, and sets status to `Partial` when paid > 0 but balance > 0
-- Overpayment: any leftover is logged into payment `notes` as "Kelebihan bayar: Rp X"
-- Auto receipt number: `RCP/YYYY/MM/000001`
+#### ✅ 2. Parent Portal (Public, No Login)
+- `app/Http/Controllers/ParentPortalController.php` — lookup (NISN + tanggal lahir) → session-based → dashboard
+- `resources/views/parent-portal/lookup.blade.php` — form login sederhana (Tailwind CDN, gradient indigo)
+- `resources/views/parent-portal/dashboard.blade.php` — kartu info siswa + rekening sekolah + tabel semua invoice dengan status badge + link download PDF
+- Routes prefix `/portal/*` di `routes/web.php`: `portal.lookup`, `portal.verify`, `portal.dashboard`, `portal.invoice.pdf` (ownership check), `portal.logout`
+- Landing `/` di-redirect ke portal
+- PDF invoice bisa didownload dari portal (ownership divalidasi: `$invoice->student_id === session('portal_student_id')`)
 
-### ✅ Step 5: Filament Resources
-- `AdminPanelProvider` (path=/admin, brand=SPP Sekolah, indigo palette)
-- Resources: `SchoolProfilePage` (singleton), `AcademicYearResource`, `ParentResource`, `StudentResource` (with 3 RelationManagers: Enrollments, Discounts, Invoices), `InvoiceResource` (with **Pay Action** including `SpatieMediaLibraryFileUpload` proof, required only when method=Transfer — Case 4), `PaymentResource` (view + Kwitansi PDF button)
-- Header action `Generate Invoice Bulan Ini` on invoice list (manual trigger of scheduler command)
-- Download actions on Invoice + Payment tables → `route('invoices.pdf')` / `route('payments.pdf')` open in new tab (WhatsApp-friendly)
+#### ✅ 3. Role Permissions (Admin vs Bendahara)
+- `app/Enums/UserRole.php` — enum Admin | Bendahara dengan HasLabel + HasColor
+- Migration `2026_02_01_000001_add_role_to_users_table.php` — kolom `role` di tabel users (default: admin)
+- `User` model diperbarui: cast `role` ke enum, method `isAdmin()`/`isBendahara()`, `canAccessPanel()` cek keanggotaan role
+- `app/Policies/InvoicePolicy.php` — Admin CRUD full, Bendahara view only (tidak boleh update/delete invoice)
+- `app/Policies/PaymentPolicy.php` — Admin CRUD full, Bendahara boleh create+view TAPI tidak boleh update/delete payment
+- `app/Providers/AuthServiceProvider.php` — register 2 policies
+- Header action `generate_now` di InvoiceResource sekarang `visible(fn () => auth()->user()?->isAdmin())`
+- Seeder membuat 2 user: `admin@sekolah.test` (Admin) + `bendahara@sekolah.test` (Bendahara), password sama: `password`
 
-### ✅ Step 6: PDF Blade Templates
-- `resources/views/pdf/invoice.blade.php` — A4, letterhead (logo + name + address + contact from SchoolProfile), meta table, item table with discount line, totals box, **bank info box** (bank name + account number + account name — Case 4 transfer instructions), signature footer
-- `resources/views/pdf/receipt.blade.php` — A4, letterhead, allocation table showing each invoice paid via FIFO with "LUNAS" / "Sisa" indicator per row (Case 2 explicit), big "JUMLAH DIBAYAR" box with **terbilang** (via `App\Support\Terbilang` helper), "Catatan Sisa Tagihan" warning box listing all remaining balances per invoice, dual signature footer
-- `PdfService` → `barryvdh/laravel-dompdf` A4 portrait, filename uses invoice/receipt number
+#### ✅ 4. Excel Export
+- Added `maatwebsite/excel: ^3.1` ke composer.json
+- `app/Exports/InvoicesExport.php` — implements FromQuery + WithHeadings + WithMapping + WithStyles + WithTitle + ShouldAutoSize; filter by month/year/status; 15 kolom
+- `app/Exports/PaymentsExport.php` — similar, dengan kolom alokasi FIFO (list semua invoice yang dibayar dari 1 payment)
+- Header action di `ListInvoices` + `ListPayments` — dialog pilih bulan+tahun → download `.xlsx` (nama file: `Rekap-Tagihan-SPP-MM-YYYY.xlsx` / `Rekap-Pembayaran-MM-YYYY.xlsx`)
 
-### ✅ Extras
-- `DatabaseSeeder` — creates admin user (admin@sekolah.test / password), sample school profile with bank info, active academic year 2026/2027, sample parent+student+enrollment for testing
-- `PdfController` + `routes/web.php` (auth middleware)
-- `App\Support\Terbilang` (number → Indonesian words, used in receipt)
-
-## NEXT STEP: NONE — All 6 required steps complete.
-
-## HOW TO RUN
+## POST-INSTALL STEPS (setelah `composer install`)
 ```bash
-cd /app/laravel-spp-app
-cp .env.example .env
-docker compose up -d --build
-docker compose exec app composer install
-docker compose exec app php artisan key:generate
-docker compose exec app php artisan migrate --seed
-docker compose exec app php artisan storage:link
+docker compose exec app php artisan migrate            # jalankan migration role
+docker compose exec app php artisan db:seed --class=DatabaseSeeder
+docker compose exec app php artisan vendor:publish --provider="Maatwebsite\Excel\ExcelServiceProvider" --tag=config
 ```
-→ Open http://localhost:8080/admin  (login: admin@sekolah.test / password)
 
-## FILE TREE
+## LOGIN CREDENTIALS
+- Admin: `admin@sekolah.test` / `password` — full akses (CRUD invoice, hapus payment, generate invoice)
+- Bendahara: `bendahara@sekolah.test` / `password` — hanya bisa input pembayaran, tidak bisa hapus atau ubah invoice
+- Portal Orang Tua: `http://localhost:8080/portal` — NISN `0071234567` + tanggal lahir siswa
+
+## NEW FILES (Phase 2)
 ```
-/app/laravel-spp-app/
-├── docker-compose.yml
-├── Dockerfile
-├── composer.json
-├── .env.example
-├── README.md
-├── docker/{nginx,php}/...
-├── app/
-│   ├── Enums/{InvoiceStatus,PaymentMethod}.php
-│   ├── Models/{SchoolProfile,AcademicYear,ParentModel,Student,
-│   │           StudentEnrollment,Discount,Invoice,Payment,
-│   │           PaymentAllocation,User}.php
-│   ├── Services/{InvoiceGeneratorService,PaymentService,PdfService}.php
-│   ├── Console/Commands/GenerateMonthlyInvoicesCommand.php
-│   ├── Http/Controllers/{Controller,PdfController}.php
-│   ├── Filament/
-│   │   ├── Pages/SchoolProfilePage.php
-│   │   └── Resources/{Student,Invoice,Payment,AcademicYear,Parent}Resource(+Pages,+RelationManagers)
-│   ├── Providers/Filament/AdminPanelProvider.php
-│   └── Support/Terbilang.php
-├── database/
-│   ├── migrations/2026_01_01_00000{0-8}_*.php
-│   └── seeders/DatabaseSeeder.php
-├── resources/views/
-│   ├── pdf/{invoice,receipt}.blade.php
-│   └── filament/pages/school-profile.blade.php
-└── routes/{web,console}.php
+app/Enums/UserRole.php
+app/Exports/InvoicesExport.php
+app/Exports/PaymentsExport.php
+app/Filament/Widgets/FinancialStatsWidget.php
+app/Filament/Widgets/PemasukanChartWidget.php
+app/Filament/Widgets/SiswaTunggakanWidget.php
+app/Http/Controllers/ParentPortalController.php
+app/Policies/InvoicePolicy.php
+app/Policies/PaymentPolicy.php
+app/Providers/AuthServiceProvider.php
+database/migrations/2026_02_01_000001_add_role_to_users_table.php
+resources/views/parent-portal/dashboard.blade.php
+resources/views/parent-portal/lookup.blade.php
+```
+
+## MODIFIED FILES (Phase 2)
+```
+app/Models/User.php                                     (+ role, canAccessPanel, isAdmin/isBendahara)
+app/Providers/Filament/AdminPanelProvider.php           (+ 3 widget)
+app/Filament/Resources/InvoiceResource/Pages/ListInvoices.php  (+ export action, admin-only generate)
+app/Filament/Resources/PaymentResource/Pages/ListPayments.php  (+ export action)
+composer.json                                           (+ maatwebsite/excel)
+database/seeders/DatabaseSeeder.php                     (+ bendahara user)
+routes/web.php                                          (+ portal routes)
+```
+
+## NEXT STEP: NONE — all 4 requested add-ons complete.
+
+## REMINDER: AuthServiceProvider Registration
+Add ke `bootstrap/providers.php` (Laravel 13) atau `config/app.php`:
+```php
+App\Providers\AuthServiceProvider::class,
 ```

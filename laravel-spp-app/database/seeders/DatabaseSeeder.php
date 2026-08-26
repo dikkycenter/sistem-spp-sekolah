@@ -15,10 +15,14 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1. Admin user
-        User::firstOrCreate(
+        // 1. Admin & Bendahara user
+        User::updateOrCreate(
             ['email' => 'admin@sekolah.test'],
-            ['name' => 'Admin Sekolah', 'password' => Hash::make('password')]
+            ['name' => 'Admin Sekolah', 'password' => Hash::make('password'), 'role' => \App\Enums\UserRole::Admin]
+        );
+        User::updateOrCreate(
+            ['email' => 'bendahara@sekolah.test'],
+            ['name' => 'Bendahara Sekolah', 'password' => Hash::make('password'), 'role' => \App\Enums\UserRole::Bendahara]
         );
 
         // 2. School profile
