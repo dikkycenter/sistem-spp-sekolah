@@ -5,43 +5,56 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\StudentResource\Pages;
 use App\Filament\Resources\StudentResource\RelationManagers;
 use App\Models\Student;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Schema;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Tables;
+use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
 class StudentResource extends Resource
 {
     protected static ?string $model = Student::class;
-    protected static ?string $navigationIcon = 'heroicon-o-academic-cap';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-academic-cap';
     protected static ?string $navigationLabel = 'Siswa';
     protected static ?string $modelLabel = 'Siswa';
     protected static ?int $navigationSort = 3;
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form->schema([
-            Forms\Components\Section::make('Data Siswa')->schema([
-                Forms\Components\TextInput::make('nisn')
-                    ->label('NISN')->required()->unique(ignoreRecord: true)->maxLength(20),
-                Forms\Components\TextInput::make('name')
-                    ->label('Nama Lengkap')->required()->maxLength(150),
-                Forms\Components\Select::make('gender')->label('Jenis Kelamin')
-                    ->options(['L' => 'Laki-laki', 'P' => 'Perempuan'])->required(),
-                Forms\Components\TextInput::make('birth_place')->label('Tempat Lahir'),
-                Forms\Components\DatePicker::make('birth_date')->label('Tanggal Lahir')
-                    ->native(false),
-                Forms\Components\Textarea::make('address')->label('Alamat')->rows(2),
-                Forms\Components\Select::make('parent_id')->label('Orang Tua')
-                    ->relationship('parent', 'name')->searchable()->preload()->required()
-                    ->createOptionForm([
-                        Forms\Components\TextInput::make('name')->required(),
-                        Forms\Components\TextInput::make('phone')->tel(),
-                        Forms\Components\Textarea::make('address'),
-                    ]),
-                Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true),
-            ])->columns(2),
+        return $schema->components([
+            Section::make('Data Siswa')
+                ->schema([
+                    TextInput::make('nisn')
+                        ->label('NISN')->required()->unique(ignoreRecord: true)->maxLength(20),
+                    TextInput::make('name')
+                        ->label('Nama Lengkap')->required()->maxLength(150),
+                    Select::make('gender')->label('Jenis Kelamin')
+                        ->options(['L' => 'Laki-laki', 'P' => 'Perempuan'])->required(),
+                    TextInput::make('birth_place')->label('Tempat Lahir'),
+                    DatePicker::make('birth_date')->label('Tanggal Lahir')
+                        ->native(false),
+                    Textarea::make('address')->label('Alamat')->rows(2),
+                    Select::make('parent_id')->label('Orang Tua')
+                        ->relationship('parent', 'name')->searchable()->preload()->required()
+                        ->createOptionForm([
+                            TextInput::make('name')->required(),
+                            TextInput::make('phone')->tel(),
+                            Textarea::make('address'),
+                        ]),
+                    Forms\Components\Toggle::make('is_active')->label('Aktif')->default(true),
+                ])
+                ->columns(2),
         ]);
     }
 
@@ -49,23 +62,23 @@ class StudentResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('nisn')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('name')->label('Nama')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('gender')->label('JK')->badge(),
-                Tables\Columns\TextColumn::make('parent.name')->label('Orang Tua')->searchable(),
-                Tables\Columns\TextColumn::make('parent.phone')->label('WhatsApp'),
-                Tables\Columns\IconColumn::make('is_active')->boolean()->label('Aktif'),
+                TextColumn::make('nisn')->searchable()->sortable(),
+                TextColumn::make('name')->label('Nama')->searchable()->sortable(),
+                TextColumn::make('gender')->label('JK')->badge(),
+                TextColumn::make('parent.name')->label('Orang Tua')->searchable(),
+                TextColumn::make('parent.phone')->label('WhatsApp'),
+                IconColumn::make('is_active')->boolean()->label('Aktif'),
             ])
             ->filters([
                 Tables\Filters\TernaryFilter::make('is_active')->label('Status Aktif'),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                EditAction::make(),
+                DeleteAction::make(),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
                 ]),
             ]);
     }

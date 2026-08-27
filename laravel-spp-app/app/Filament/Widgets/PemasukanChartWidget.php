@@ -11,7 +11,7 @@ use Filament\Widgets\ChartWidget;
  */
 class PemasukanChartWidget extends ChartWidget
 {
-    protected static ?string $heading = 'Pemasukan 6 Bulan Terakhir';
+    protected ?string $heading = 'Pemasukan 6 Bulan Terakhir';
     protected static ?int $sort = 3;
     protected int|string|array $columnSpan = 'full';
 

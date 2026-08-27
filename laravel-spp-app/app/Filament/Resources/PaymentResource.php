@@ -5,7 +5,7 @@ namespace App\Filament\Resources;
 use App\Enums\PaymentMethod;
 use App\Models\Payment;
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Schemas\Schema;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -13,13 +13,13 @@ use Filament\Tables\Table;
 class PaymentResource extends Resource
 {
     protected static ?string $model = Payment::class;
-    protected static ?string $navigationIcon = 'heroicon-o-banknotes';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-banknotes';
     protected static ?string $navigationLabel = 'Pembayaran';
     protected static ?int $navigationSort = 6;
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form->schema([
+        return $schema->components([
             Forms\Components\TextInput::make('receipt_number')->disabled(),
             Forms\Components\TextInput::make('amount_paid')->money('IDR')->disabled(),
             Forms\Components\TextInput::make('method')->disabled(),
@@ -47,13 +47,13 @@ class PaymentResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('method')
                     ->options(collect(PaymentMethod::cases())
-                        ->mapWithKeys(fn ($m) => [$m->value => $m->getLabel()])->toArray()),
+                        ->mapWithKeys(fn($m) => [$m->value => $m->getLabel()])->toArray()),
             ])
             ->actions([
                 Tables\Actions\Action::make('download_receipt')
                     ->label('Kwitansi PDF')
                     ->icon('heroicon-o-arrow-down-tray')
-                    ->url(fn (Payment $r) => route('payments.pdf', $r))
+                    ->url(fn(Payment $r) => route('payments.pdf', $r))
                     ->openUrlInNewTab(),
                 Tables\Actions\ViewAction::make(),
             ]);

@@ -3,9 +3,12 @@
 namespace App\Filament\Resources\StudentResource\RelationManagers;
 
 use App\Models\AcademicYear;
+use Filament\Actions\CreateAction;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\EditAction;
 use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 
@@ -14,9 +17,9 @@ class EnrollmentsRelationManager extends RelationManager
     protected static string $relationship = 'enrollments';
     protected static ?string $title = 'Riwayat Kelas & SPP';
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form->schema([
+        return $schema->components([
             Forms\Components\Select::make('academic_year_id')
                 ->label('Tahun Ajaran')
                 ->options(AcademicYear::pluck('name', 'id'))
@@ -43,10 +46,10 @@ class EnrollmentsRelationManager extends RelationManager
                     ->label('SPP/Bulan')->money('IDR'),
                 Tables\Columns\IconColumn::make('is_active')->boolean(),
             ])
-            ->headerActions([Tables\Actions\CreateAction::make()])
+            ->headerActions([CreateAction::make()])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                EditAction::make(),
+                DeleteAction::make(),
             ]);
     }
 }

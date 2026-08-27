@@ -46,7 +46,7 @@ class SiswaTunggakanWidget extends BaseWidget
                     ->label('Invoice Belum Lunas')->badge()->color('warning'),
                 Tables\Columns\TextColumn::make('total_arrears')
                     ->label('Total Tunggakan')
-                    ->formatStateUsing(fn ($state) => 'Rp '.number_format((float) $state, 0, ',', '.'))
+                    ->formatStateUsing(fn($state) => 'Rp ' . number_format((float) $state, 0, ',', '.'))
                     ->color('danger')
                     ->weight('bold'),
             ])

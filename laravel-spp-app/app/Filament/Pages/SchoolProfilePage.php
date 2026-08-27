@@ -5,11 +5,14 @@ namespace App\Filament\Pages;
 use App\Models\SchoolProfile;
 use Filament\Actions\Action;
 use Filament\Forms;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
-use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
 
 /**
  * Halaman singleton untuk edit Profil Sekolah (data kop surat + rekening).
@@ -18,11 +21,10 @@ class SchoolProfilePage extends Page implements HasForms
 {
     use InteractsWithForms;
 
-    protected static ?string $navigationIcon = 'heroicon-o-building-library';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-building-library';
     protected static ?string $navigationLabel = 'Profil Sekolah';
     protected static ?int $navigationSort = 1;
-    protected static string $view = 'filament.pages.school-profile';
-
+    protected string $view = 'filament.pages.school-profile';
     public ?array $data = [];
 
     public function mount(): void
@@ -31,26 +33,26 @@ class SchoolProfilePage extends Page implements HasForms
         $this->form->fill($profile->toArray());
     }
 
-    public function form(Form $form): Form
+    public function fform(Schema $schema): Schema
     {
-        return $form->schema([
-            Forms\Components\Section::make('Identitas Sekolah')->schema([
-                Forms\Components\TextInput::make('name')->label('Nama Sekolah')->required(),
-                Forms\Components\TextInput::make('headmaster_name')->label('Nama Kepala Sekolah'),
-                Forms\Components\Textarea::make('address')->required()->columnSpanFull(),
-                Forms\Components\TextInput::make('phone')->tel()->label('No. Telp'),
-                Forms\Components\TextInput::make('email')->email(),
-                Forms\Components\TextInput::make('website'),
-                \Filament\Forms\Components\SpatieMediaLibraryFileUpload::make('logo')
+        return $schema->components([
+            Section::make('Identitas Sekolah')->schema([
+                TextInput::make('name')->label('Nama Sekolah')->required(),
+                TextInput::make('headmaster_name')->label('Nama Kepala Sekolah'),
+                Textarea::make('address')->required()->columnSpanFull(),
+                TextInput::make('phone')->tel()->label('No. Telp'),
+                TextInput::make('email')->email(),
+                TextInput::make('website'),
+                SpatieMediaLibraryFileUpload::make('logo')
                     ->collection('logo')->image()->label('Logo Sekolah')
                     ->disk(config('filesystems.default')),
             ])->columns(2),
 
-            Forms\Components\Section::make('Rekening Sekolah (untuk transfer SPP)')->schema([
-                Forms\Components\TextInput::make('bank_name')->label('Nama Bank')
+            Section::make('Rekening Sekolah (untuk transfer SPP)')->schema([
+                TextInput::make('bank_name')->label('Nama Bank')
                     ->placeholder('BCA / BRI / BNI / Mandiri'),
-                Forms\Components\TextInput::make('bank_account_number')->label('No. Rekening'),
-                Forms\Components\TextInput::make('bank_account_name')->label('Atas Nama')
+                TextInput::make('bank_account_number')->label('No. Rekening'),
+                TextInput::make('bank_account_name')->label('Atas Nama')
                     ->columnSpanFull(),
             ])->columns(2),
         ])->statePath('data')->model(SchoolProfile::current());

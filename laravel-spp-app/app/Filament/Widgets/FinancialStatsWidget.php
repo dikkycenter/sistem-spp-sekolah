@@ -18,7 +18,7 @@ class FinancialStatsWidget extends BaseWidget
 {
     protected static ?int $sort = 1;
     protected int|string|array $columnSpan = 'full';
-    protected static ?string $pollingInterval = '60s';
+    protected ?string $pollingInterval = '60s';
 
     protected function getStats(): array
     {
@@ -46,14 +46,14 @@ class FinancialStatsWidget extends BaseWidget
         })->toArray();
 
         return [
-            Stat::make('Pemasukan Bulan Ini', 'Rp '.number_format($pemasukanBulanIni, 0, ',', '.'))
+            Stat::make('Pemasukan Bulan Ini', 'Rp ' . number_format($pemasukanBulanIni, 0, ',', '.'))
                 ->description($now->translatedFormat('F Y'))
                 ->descriptionIcon('heroicon-o-arrow-trending-up')
                 ->color('success')
                 ->chart($chartData),
 
-            Stat::make('Total Tunggakan', 'Rp '.number_format($totalTunggakan, 0, ',', '.'))
-                ->description($invoicePending.' invoice belum lunas')
+            Stat::make('Total Tunggakan', 'Rp ' . number_format($totalTunggakan, 0, ',', '.'))
+                ->description($invoicePending . ' invoice belum lunas')
                 ->descriptionIcon('heroicon-o-exclamation-triangle')
                 ->color($totalTunggakan > 0 ? 'danger' : 'gray'),
 

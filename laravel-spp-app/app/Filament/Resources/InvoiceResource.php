@@ -6,29 +6,37 @@ use App\Enums\InvoiceStatus;
 use App\Enums\PaymentMethod;
 use App\Models\Invoice;
 use App\Services\PaymentService;
+use Filament\Actions\ViewAction;
 use Filament\Forms;
-use Filament\Forms\Form;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Schema;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 
 class InvoiceResource extends Resource
 {
     protected static ?string $model = Invoice::class;
-    protected static ?string $navigationIcon = 'heroicon-o-document-text';
+    protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-document-text';
     protected static ?string $navigationLabel = 'Tagihan SPP';
     protected static ?int $navigationSort = 5;
 
-    public static function form(Form $form): Form
+    public static function form(Schema $schema): Schema
     {
-        return $form->schema([
-            Forms\Components\TextInput::make('invoice_number')->disabled(),
-            Forms\Components\TextInput::make('total_due')->money('IDR')->disabled(),
-            Forms\Components\TextInput::make('total_paid')->money('IDR')->disabled(),
-            Forms\Components\TextInput::make('remaining_balance')->money('IDR')->disabled(),
-            Forms\Components\Textarea::make('notes')->rows(3)->columnSpanFull(),
+        return $schema->components([
+            TextInput::make('invoice_number')->disabled(),
+            TextInput::make('total_due')->money('IDR')->disabled(),
+            TextInput::make('total_paid')->money('IDR')->disabled(),
+            TextInput::make('remaining_balance')->money('IDR')->disabled(),
+            Textarea::make('notes')->rows(3)->columnSpanFull(),
         ])->columns(2);
     }
 
@@ -37,24 +45,24 @@ class InvoiceResource extends Resource
         return $table
             ->defaultSort('id', 'desc')
             ->columns([
-                Tables\Columns\TextColumn::make('invoice_number')->label('No. Invoice')
+                TextColumn::make('invoice_number')->label('No. Invoice')
                     ->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('student.name')->label('Siswa')->searchable(),
-                Tables\Columns\TextColumn::make('student.nisn')->label('NISN'),
-                Tables\Columns\TextColumn::make('month')
-                    ->formatStateUsing(fn ($state, $record) => sprintf('%02d/%d', $state, $record->year))
+                TextColumn::make('student.name')->label('Siswa')->searchable(),
+                TextColumn::make('student.nisn')->label('NISN'),
+                TextColumn::make('month')
+                    ->formatStateUsing(fn($state, $record) => sprintf('%02d/%d', $state, $record->year))
                     ->label('Periode')->sortable(),
-                Tables\Columns\TextColumn::make('total_due')->money('IDR'),
-                Tables\Columns\TextColumn::make('total_paid')->money('IDR'),
-                Tables\Columns\TextColumn::make('remaining_balance')->money('IDR')->label('Sisa'),
-                Tables\Columns\TextColumn::make('status')->badge(),
+                TextColumn::make('total_due')->money('IDR'),
+                TextColumn::make('total_paid')->money('IDR'),
+                TextColumn::make('remaining_balance')->money('IDR')->label('Sisa'),
+                TextColumn::make('status')->badge(),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('status')
+                SelectFilter::make('status')
                     ->options(collect(InvoiceStatus::cases())
-                        ->mapWithKeys(fn ($c) => [$c->value => $c->getLabel()])->toArray()),
-                Tables\Filters\SelectFilter::make('year')
-                    ->options(fn () => Invoice::query()->distinct()
+                        ->mapWithKeys(fn($c) => [$c->value => $c->getLabel()])->toArray()),
+                SelectFilter::make('year')
+                    ->options(fn() => Invoice::query()->distinct()
                         ->pluck('year', 'year')->toArray()),
             ])
             ->actions([
@@ -63,29 +71,29 @@ class InvoiceResource extends Resource
                     ->label('Bayar')
                     ->icon('heroicon-o-banknotes')
                     ->color('success')
-                    ->visible(fn (Invoice $r) => $r->status !== InvoiceStatus::Paid)
+                    ->visible(fn(Invoice $r) => $r->status !== InvoiceStatus::Paid)
                     ->form([
-                        Forms\Components\TextInput::make('amount_paid')
+                        TextInput::make('amount_paid')
                             ->label('Jumlah Bayar (Rp)')
                             ->required()->numeric()->minValue(1)
-                            ->default(fn (Invoice $r) => $r->remaining_balance)
+                            ->default(fn(Invoice $r) => $r->remaining_balance)
                             ->helperText('Boleh kurang dari total (partial). Kelebihan otomatis dialokasi ke invoice tertua lain via FIFO.'),
-                        Forms\Components\Select::make('method')
+                        Select::make('method')
                             ->label('Metode')
                             ->options(collect(PaymentMethod::cases())
-                                ->mapWithKeys(fn ($m) => [$m->value => $m->getLabel()])->toArray())
+                                ->mapWithKeys(fn($m) => [$m->value => $m->getLabel()])->toArray())
                             ->required()->reactive(),
-                        Forms\Components\DatePicker::make('payment_date')
+                        DatePicker::make('payment_date')
                             ->label('Tanggal Bayar')->default(now())->required()->native(false),
-                        Forms\Components\Textarea::make('notes')->label('Catatan')->rows(2),
+                        Textarea::make('notes')->label('Catatan')->rows(2),
                         // Bukti bayar WAJIB kalau transfer (Case 4)
-                        \Filament\Forms\Components\SpatieMediaLibraryFileUpload::make('proof')
+                        SpatieMediaLibraryFileUpload::make('proof')
                             ->label('Bukti Pembayaran')
                             ->collection('proof')
                             ->disk(config('filesystems.default'))
                             ->acceptedFileTypes(['image/png', 'image/jpeg', 'application/pdf'])
-                            ->required(fn (Forms\Get $get) => $get('method') === PaymentMethod::Transfer->value)
-                            ->visible(fn (Forms\Get $get) => $get('method') === PaymentMethod::Transfer->value)
+                            ->required(fn(Get $get) => $get('method') === PaymentMethod::Transfer->value)
+                            ->visible(fn(Get $get) => $get('method') === PaymentMethod::Transfer->value)
                             ->helperText('Wajib untuk metode Transfer.'),
                     ])
                     ->action(function (array $data, Invoice $record) {
@@ -105,7 +113,7 @@ class InvoiceResource extends Resource
                         // kita attach manual:
                         if (! empty($data['proof'])) {
                             foreach ((array) $data['proof'] as $file) {
-                                $payment->addMedia(storage_path('app/livewire-tmp/'.basename($file)))
+                                $payment->addMedia(storage_path('app/livewire-tmp/' . basename($file)))
                                     ->toMediaCollection('proof');
                             }
                         }
@@ -119,10 +127,10 @@ class InvoiceResource extends Resource
                 Action::make('download_invoice')
                     ->label('Invoice PDF')
                     ->icon('heroicon-o-arrow-down-tray')
-                    ->url(fn (Invoice $r) => route('invoices.pdf', $r))
+                    ->url(fn(Invoice $r) => route('invoices.pdf', $r))
                     ->openUrlInNewTab(),
 
-                Tables\Actions\ViewAction::make(),
+                ViewAction::make(),
             ]);
     }
 

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\StudentResource\RelationManagers;
 
 use App\Enums\InvoiceStatus;
+use Filament\Actions\Action;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -27,13 +28,13 @@ class InvoicesRelationManager extends RelationManager
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->options(collect(InvoiceStatus::cases())
-                    ->mapWithKeys(fn ($c) => [$c->value => $c->getLabel()])->toArray()),
+                    ->mapWithKeys(fn($c) => [$c->value => $c->getLabel()])->toArray()),
             ])
             ->actions([
-                Tables\Actions\Action::make('download_invoice')
+                Action::make('download_invoice')
                     ->label('Download Invoice')
                     ->icon('heroicon-o-arrow-down-tray')
-                    ->url(fn ($record) => route('invoices.pdf', $record))
+                    ->url(fn($record) => route('invoices.pdf', $record))
                     ->openUrlInNewTab(),
             ]);
     }
