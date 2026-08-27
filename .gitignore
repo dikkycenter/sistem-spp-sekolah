@@ -15,7 +15,8 @@ node_modules/
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-
+*/vendor
+vendor/
 # Testing
 /coverage
 
@@ -86,3 +87,6 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+vendor/
+vendor
+vendor/
